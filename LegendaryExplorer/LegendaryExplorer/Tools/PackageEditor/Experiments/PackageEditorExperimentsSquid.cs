@@ -8,6 +8,8 @@ using System.Text;
 using System.Windows;
 using System.Linq;
 using System.Collections.Generic;
+using System;
+using System.Numerics;
 
 namespace LegendaryExplorer.Tools.PackageEditor.Experiments
 {
@@ -297,6 +299,140 @@ defaultproperties
             morphHead.WritePropertiesAndBinary(morphHeadProps, morphHeadBinary);
 
             return sb.ToString();
+        }
+
+        public static void MakeHeterochromiaMesh(PackageEditorWindow pew)
+        {
+            if (pew.SelectedItem == null || pew.SelectedItem.Entry == null || pew.Pcc == null) { return; }
+
+            if (pew.SelectedItem.Entry.ClassName != "SkeletalMesh")
+            {
+                ShowError("Selected item is not a SkeletalMesh");
+                return;
+            }
+
+            var headMesh = (ExportEntry)pew.SelectedItem.Entry;
+            var meshBinary = headMesh.GetBinaryData<SkeletalMesh>();
+
+            var eyeMatIndex = GetEyeMaterialIndex(pew, meshBinary);
+            var newEyeMaterialIndex = AddMaterialSlot(meshBinary);
+
+            // from there, find the section we need to modify
+            var LOD0 = meshBinary.LODModels[0];
+            HandleLOD(LOD0, eyeMatIndex, newEyeMaterialIndex);
+
+            headMesh.WriteBinary(meshBinary);
+        }
+
+        private static void HandleLOD(StaticLODModel lod, int eyeMatIndex, int newEyeMatIndex)
+        {
+            SkelMeshSection eyeSection = null;
+            int EyeSectionIndex = -1;
+            for (int i = 0; i < lod.Sections.Length; i++)
+            {
+                var section = lod.Sections[i];
+                if (section.MaterialIndex == eyeMatIndex)
+                {
+                    EyeSectionIndex = i;
+                    eyeSection = section;
+                    break;
+                }
+            }
+
+            if (eyeSection == null)
+            {
+                return;
+            }
+
+            var newSections = new List<SkelMeshSection>();
+
+            for (int i = 0; i < EyeSectionIndex; i++)
+            {
+                newSections.Add(lod.Sections[i]);
+            }
+
+            bool right = IsRightEyeTriangle(lod, (int)eyeSection.BaseIndex);
+            int currentTriangleCount = 0;
+            int currentBaseIndex = (int)eyeSection.BaseIndex;
+            for (int i = (int)eyeSection.BaseIndex; i < (int)eyeSection.BaseIndex + eyeSection.NumTriangles * 3; i += 3)
+            {
+                if (IsRightEyeTriangle(lod, i) == right)
+                {
+                    currentTriangleCount++;
+                    continue;
+                }
+                
+                newSections.Add(new SkelMeshSection()
+                {
+                    BaseIndex = (uint)currentBaseIndex,
+                    ChunkIndex = eyeSection.ChunkIndex,
+                    MaterialIndex = (ushort)(right ? newEyeMatIndex : eyeMatIndex),
+                    NumTriangles = currentTriangleCount,
+                    TriangleSorting = eyeSection.TriangleSorting
+                });
+
+                right = !right;
+                currentBaseIndex = i;
+                currentTriangleCount = 0;
+            }
+
+            newSections.Add(new SkelMeshSection()
+            {
+                BaseIndex = (uint)currentBaseIndex,
+                ChunkIndex = eyeSection.ChunkIndex,
+                MaterialIndex = (ushort)(right ? newEyeMatIndex : eyeMatIndex),
+                NumTriangles = currentTriangleCount,
+                TriangleSorting = eyeSection.TriangleSorting
+            });
+
+            for (int i = EyeSectionIndex + 1; i < lod.Sections.Length; i++)
+            {
+                newSections.Add(lod.Sections[i]);
+            }
+
+            lod.Sections = newSections.ToArray();
+        }
+
+        private static (int, int, int) GetTriangle(StaticLODModel lod, int triangleIndex)
+        {
+            return (lod.IndexBuffer[triangleIndex], lod.IndexBuffer[triangleIndex + 1], lod.IndexBuffer[triangleIndex + 2]);
+        }
+
+        private static Vector3 GetVertex(StaticLODModel lod, int vertIndex)
+        {
+            return lod.VertexBufferGPUSkin.VertexData[vertIndex].Position;
+        }
+
+        private static bool IsRightEyeTriangle(StaticLODModel lod, int triangleIndex)
+        {
+            var (v1, v2, v3) = GetTriangle(lod, triangleIndex);
+            // TODO validate that the others are also right side?
+            return IsRightEyeVertex(lod, v1);
+        }
+
+        private static bool IsRightEyeVertex(StaticLODModel lod, int vertIndex)
+        {
+            return GetVertex(lod, vertIndex).Y > 0;
+        }
+
+        private static int GetEyeMaterialIndex(PackageEditorWindow pew, SkeletalMesh meshBinary)
+        {
+            var materialChoices = meshBinary.Materials.Select(x => pew.Pcc.GetUExport(x)).ToList();
+            var mat = EntrySelector.GetEntry<ExportEntry>(pew, pew.Pcc, "Which material is the eye material?",
+                    exp => materialChoices.Contains(exp));
+            return materialChoices.IndexOf(mat);
+        }
+
+        private static int AddMaterialSlot(SkeletalMesh meshBinary)
+        {
+            var tempMaterials = meshBinary.Materials;
+            meshBinary.Materials = new int[meshBinary.Materials.Length + 1];
+            for (int i = 0; i < tempMaterials.Length; i++)
+            {
+                meshBinary.Materials[i] = tempMaterials[i];
+            }
+
+            return meshBinary.Materials.Length - 1;
         }
 
         private static void ShowError(string errMsg)

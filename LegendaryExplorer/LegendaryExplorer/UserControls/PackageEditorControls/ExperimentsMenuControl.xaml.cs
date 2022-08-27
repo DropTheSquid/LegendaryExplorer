@@ -1294,7 +1294,7 @@ namespace LegendaryExplorer.UserControls.PackageEditorControls
 
         private void MakeHeterochromia_Click(object sender, RoutedEventArgs e)
         {
-            // Not yet implemented
+            PackageEditorExperimentsSquid.MakeHeterochromiaMesh(GetPEWindow());
         }
 
         // EXPERIMENTS: OTHER PEOPLE ------------------------------------------------------------
