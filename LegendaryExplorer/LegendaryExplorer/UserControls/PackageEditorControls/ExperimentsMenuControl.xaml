@@ -152,6 +152,10 @@
         <MenuItem Header="Dump TOC file" Click="DumpTOC_Click"/>
         <MenuItem Header="Export BioMorphFace to PSK with UModel" Click="ExportBioMorphFace_Click" ToolTip="Must have BioMorphFace selected and UModel installed"/>
     </MenuItem>
+    <MenuItem Header="Squid's new and exciting ways to break stuff">
+        <MenuItem Header="Make Custom Morph Target Set" Click="MakeCustomMorphTargetSet_Click" ToolTip="Makes a new CustomMorphTargetSet and BioMorphFace for use in mods that dynamically change appearance from  MorphTargetSet or Skeletal Mesh"/>
+        <MenuItem Header="Convert Head Mesh to Have Separate Eye Materials" Click="MakeHeterochromia_Click" ToolTip="Creates a copy of a head mesh with separate Eye Materials"/>
+    </MenuItem>
     <MenuItem Header="Other people's box of Legos">
         <MenuItem Header="Export level to T3D" Click="ExportLevelToT3D_Click"/>
         <MenuItem Header="Add Preset Director InterpGroup" Click="AddPresetDirectorGroup_Click" ToolTip="Add an InterpGroupDirector along with Director and DOF tracks."/>

@@ -1286,6 +1286,17 @@ namespace LegendaryExplorer.UserControls.PackageEditorControls
 
         #endregion
 
+        // EXPERIMENTS: DropTheSquid
+        private void MakeCustomMorphTargetSet_Click(object sender, RoutedEventArgs e)
+        {
+            PackageEditorExperimentsSquid.MakeCustomMorphTargetSet(GetPEWindow());
+        }
+
+        private void MakeHeterochromia_Click(object sender, RoutedEventArgs e)
+        {
+            // Not yet implemented
+        }
+
         // EXPERIMENTS: OTHER PEOPLE ------------------------------------------------------------
         #region Other people's experiments
         private void ExportLevelToT3D_Click(object sender, RoutedEventArgs e)
