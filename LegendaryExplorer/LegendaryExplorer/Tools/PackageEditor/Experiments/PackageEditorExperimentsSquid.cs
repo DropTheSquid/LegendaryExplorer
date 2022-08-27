@@ -7,6 +7,7 @@ using LegendaryExplorerCore.UnrealScript;
 using System.Text;
 using System.Windows;
 using System.Linq;
+using System.Collections.Generic;
 
 namespace LegendaryExplorer.Tools.PackageEditor.Experiments
 {
@@ -49,7 +50,7 @@ namespace LegendaryExplorer.Tools.PackageEditor.Experiments
 
             sb.AppendLine($"Class {className} extends CustomMorphTargetSet config(game);");
             sb.AppendLine("defaultproperties {");
-            sb.AppendLine(HandleSkeletalMesh(headMesh));
+            sb.AppendLine(HandleSkeletalMesh(pew, headMesh));
             if (morphTargetSet != null)
             {
                 sb.AppendLine(HandleVanillaMorphTargetSet(pew, morphTargetSet));
@@ -124,6 +125,19 @@ namespace LegendaryExplorer.Tools.PackageEditor.Experiments
             }
 
             return folder;
+        }
+
+        private static ExportEntry CreateBioMorphFace(PackageEditorWindow pew, string objectName)
+        {
+            IEntry BioMorphFaceClass = pew.Pcc.getEntryOrAddImport("SFXGame.BioMorphFace");
+            var morphFace = new ExportEntry(pew.Pcc, 0, objectName)
+            {
+                Class = BioMorphFaceClass
+            };
+            pew.Pcc.AddExport(morphFace);
+            morphFace = pew.Pcc.FindExport(objectName);
+
+            return morphFace;
         }
 
         private static ExportEntry EnsureParentClassExists(PackageEditorWindow pew)
@@ -220,9 +234,17 @@ defaultproperties
             return (ExportEntry)pew.Pcc.FindEntry(fullPath);
         }
 
-        private static string HandleSkeletalMesh(ExportEntry headMesh)
+        private static string HandleSkeletalMesh(PackageEditorWindow pew, ExportEntry headMesh)
         {
             var meshBinary = headMesh.GetBinaryData<SkeletalMesh>();
+            var morphHeadBinary = new BioMorphFace();
+            var morphHeadProps = new PropertyCollection();
+            var morphHeadSkeleton = new ArrayProperty<StructProperty>("m_aFinalSkeleton");
+
+            morphHeadProps.Add(new ObjectProperty(headMesh, "m_oBaseHead"));
+
+            var MorphHeadExcludeBones = new List<string> { "God", "Root", "LowerBack", "Chest", "Chest1", "Chest2", "Neck", "Neck1", "Head", };
+            // m_aFinalSkeleton, m_oBaseHead
 
             var sb = new StringBuilder();
 
@@ -232,23 +254,47 @@ defaultproperties
             {
                 var refBone = meshBinary.RefSkeleton[i];
                 sb.AppendLine($"\t\t{{Bone = '{refBone.Name}',Offset = {{X = {refBone.Position.X:F8}, Y = {refBone.Position.Y:F8}, Z = {refBone.Position.Z:F8}}}}}{(i < meshBinary.RefSkeleton.Length - 1 ? "," : "")}");
+
+                if (!MorphHeadExcludeBones.Contains(refBone.Name))
+                {
+                    morphHeadSkeleton.Add(new StructProperty("OffsetBonePos",
+                        false,
+                        new NameProperty(refBone.Name, "nName"),
+                        new StructProperty("Vector", true,
+                            new FloatProperty(refBone.Position.X, "X"),
+                            new FloatProperty(refBone.Position.Y, "Y"),
+                            new FloatProperty(refBone.Position.Z, "Z")
+                            )
+                        { Name = "vPos" }));
+                }
             }
             sb.AppendLine("\t)");
 
+            morphHeadProps.Add(morphHeadSkeleton);
+
             // add the original mesh vertices
             sb.AppendLine("\tOriginalMeshLodModels = (");
+            morphHeadBinary.LODs = new System.Numerics.Vector3[meshBinary.LODModels.Length][];
             for (int i = 0; i < meshBinary.LODModels.Length; i++)
             {
                 var lodModel = meshBinary.LODModels[i];
+                morphHeadBinary.LODs[i] = new System.Numerics.Vector3[lodModel.VertexBufferGPUSkin.VertexData.Length];
+                var morphLod = morphHeadBinary.LODs[i];
+
                 sb.Append("\t\t{vertices = (");
                 for (int j = 0; j < lodModel.VertexBufferGPUSkin.VertexData.Length; j++)
                 {
                     var vert = lodModel.VertexBufferGPUSkin.VertexData[j];
                     sb.Append($"{{X = {vert.Position.X:F8},Y = {vert.Position.Y:F8}, Z = {vert.Position.Z:F8}}}{(j < lodModel.VertexBufferGPUSkin.VertexData.Length - 1 ? "," : "")}");
+                    morphLod[j] = new System.Numerics.Vector3(vert.Position.X, vert.Position.Y, vert.Position.Z);
                 }
                 sb.AppendLine($")}}{(i < meshBinary.LODModels.Length - 1 ? "," : "")}");
             }
             sb.AppendLine("\t)");
+
+            var morphHead = CreateBioMorphFace(pew, headMesh.ObjectName + "_MorphHead");
+
+            morphHead.WritePropertiesAndBinary(morphHeadProps, morphHeadBinary);
 
             return sb.ToString();
         }
