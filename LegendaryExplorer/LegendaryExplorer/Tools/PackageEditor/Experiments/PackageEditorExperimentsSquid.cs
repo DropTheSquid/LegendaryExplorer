@@ -318,8 +318,10 @@ defaultproperties
             var newEyeMaterialIndex = AddMaterialSlot(meshBinary);
 
             // from there, find the section we need to modify
-            var LOD0 = meshBinary.LODModels[0];
-            HandleLOD(LOD0, eyeMatIndex, newEyeMaterialIndex);
+            foreach (var lod in meshBinary.LODModels)
+            {
+                HandleLOD(lod, eyeMatIndex, newEyeMaterialIndex);
+            }
 
             headMesh.WriteBinary(meshBinary);
         }
