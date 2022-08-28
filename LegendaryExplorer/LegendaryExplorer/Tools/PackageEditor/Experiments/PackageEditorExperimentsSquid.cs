@@ -373,7 +373,7 @@ defaultproperties
 
                 right = !right;
                 currentBaseIndex = i;
-                currentTriangleCount = 0;
+                currentTriangleCount = 1;
             }
 
             newSections.Add(new SkelMeshSection()
@@ -417,8 +417,8 @@ defaultproperties
 
         private static int GetEyeMaterialIndex(PackageEditorWindow pew, SkeletalMesh meshBinary)
         {
-            var materialChoices = meshBinary.Materials.Select(x => pew.Pcc.GetUExport(x)).ToList();
-            var mat = EntrySelector.GetEntry<ExportEntry>(pew, pew.Pcc, "Which material is the eye material?",
+            var materialChoices = meshBinary.Materials.Select<int, IEntry>(x => x > 0 ? pew.Pcc.GetUExport(x) : pew.Pcc.GetImport(x)).ToList();
+            var mat = EntrySelector.GetEntry<IEntry>(pew, pew.Pcc, "Which material is the eye material?",
                     exp => materialChoices.Contains(exp));
             return materialChoices.IndexOf(mat);
         }
