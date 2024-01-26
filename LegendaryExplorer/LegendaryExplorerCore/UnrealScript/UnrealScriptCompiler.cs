@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using JetBrains.Annotations;
 using LegendaryExplorerCore.Gammtek.Extensions.Collections.Generic;
 using LegendaryExplorerCore.Helpers;
@@ -394,7 +395,7 @@ namespace LegendaryExplorerCore.UnrealScript
                     log.LogError("FileLib not initialized!");
                     return (null, log);
                 }
-                if (export.Parent is not ExportEntry {IsClass: true} parent)
+                if (export.Parent is not ExportEntry { IsClass: true } parent)
                 {
                     log.LogError(export.InstancedFullPath + " does not have a Class Export as a parent!");
                     return (null, log);
@@ -661,7 +662,7 @@ namespace LegendaryExplorerCore.UnrealScript
             {
                 foreach (Struct existingNativeStruct in existingClass.TypeDeclarations.OfType<Struct>().Where(s => s.IsNative))
                 {
-                    if (cls.TypeDeclarations.FirstOrDefault(t => t.Name == existingNativeStruct.Name) is Struct newStruct 
+                    if (cls.TypeDeclarations.FirstOrDefault(t => t.Name == existingNativeStruct.Name) is Struct newStruct
                         && !existingNativeStruct.IsNativeCompatibleWith(newStruct, pcc.Game))
                     {
                         log.LogError($"Cannot modify native struct: {existingNativeStruct.Name}", newStruct.StartPos, newStruct.EndPos);
@@ -680,7 +681,7 @@ namespace LegendaryExplorerCore.UnrealScript
             return cls;
         }
 
-        private static void CompileNewClassASTInternal(IMEPackage pcc, Class cls, MessageLog log, SymbolTable symbols, Class existingClass, ref bool vfTableChanged, 
+        private static void CompileNewClassASTInternal(IMEPackage pcc, Class cls, MessageLog log, SymbolTable symbols, Class existingClass, ref bool vfTableChanged,
             Func<IMEPackage, string, IEntry> missingObjectResolver = null, List<string> vtableDonor = null)
         {
             symbols.RevertToObjectStack();
@@ -752,7 +753,7 @@ namespace LegendaryExplorerCore.UnrealScript
                 if (existingClass?.VirtualFunctionNames is not null)
                 {
                     var existingNames = new HashSet<string>(existingClass.VirtualFunctionNames, StringComparer.OrdinalIgnoreCase);
-                    if (existingNames.SetEquals(cls.VirtualFunctionNames) 
+                    if (existingNames.SetEquals(cls.VirtualFunctionNames)
                         //check if the ordering matches the parent where they overlap. If not, existing ordering is broken
                         && parentVirtualFuncNames.AsSpan().SequenceEqual(existingClass.VirtualFunctionNames.AsSpan()[..parentVirtualFuncNames.Count], StringComparer.OrdinalIgnoreCase))
                     {
@@ -1024,9 +1025,142 @@ namespace LegendaryExplorerCore.UnrealScript
             internal MessageLog Log;
         }
 
+        public record LooseClassPackageEx(IEnumerable<string> packagePath, List<LooseClass> Classes);
+
+        public static MessageLog CompileLooseClassesEx(IMEPackage targetPcc, List<LooseClassPackageEx> looseClasses, Func<IMEPackage, string, IEntry> missingObjectResolver,
+            string gameRootPath = null, PackageCache cache = null, Func<string, List<string>> vtableDonorGetter = null)
+        {
+            using var packageCache = new PackageCache();
+            using var fileLib = new FileLib(targetPcc);
+
+            var classASTs = new List<Class>();
+            foreach (LooseClass looseClass in looseClasses.SelectMany(lcp => lcp.Classes))
+            {
+                var log = new MessageLog();
+                (ASTNode node, _) = CompileOutlineAST(looseClass.Source, "Class", log, targetPcc.Game);
+                if (node is not Class cls)
+                {
+                    log.LogError($"'{looseClass.ClassName}' does not contain a parseable class.");
+                    return log;
+                }
+                if (log.HasErrors || log.HasLexErrors)
+                {
+                    log.LogError($"'{looseClass.ClassName}' had parse errors");
+                    return log;
+                }
+                classASTs.Add(cls);
+                looseClass.ClassAST = cls;
+                looseClass.Log = log;
+            }
+
+            if (!fileLib.InternalInitialize(packageCache, gameRootPath, additionalClasses: classASTs))
+            {
+                fileLib.InitializationLog.LogError("Could not initialize FileLib.");
+                return fileLib.InitializationLog;
+            }
+
+            var completions = new List<(UClass uClass, Action action)>();
+            foreach (LooseClassPackageEx looseClassPackage in looseClasses)
+            {
+                if (!FindOrCreatePackagePath(looseClassPackage.packagePath, targetPcc, cache, out var classPackage, out var pacakgePathLog))
+                {
+                    return pacakgePathLog;
+                }
+
+                bool vfTableChanged = false;
+                SymbolTable symbols = fileLib.ReadonlySymbolTable; //this sign can't stop me because I can't read!
+                foreach (LooseClass looseClass in looseClassPackage.Classes)
+                {
+                    MessageLog log = looseClass.Log;
+                    Class cls = looseClass.ClassAST;
+
+                    try
+                    {
+                        CompileNewClassASTInternal(targetPcc, cls, log, symbols, null, ref vfTableChanged, missingObjectResolver, vtableDonorGetter?.Invoke(cls.Name));
+                        if (log.HasErrors)
+                        {
+                            log.LogError($"'{looseClass.ClassName}' had parse errors");
+                            return log;
+                        }
+                        UClass uClass = null;
+                        Action completionAction = ScriptObjectCompiler.CreateClassStub(cls, targetPcc, classPackage, ref uClass, packageCache, fileLib.GameRootPath);
+                        completions.Add(uClass, completionAction);
+                    }
+                    catch (ParseException)
+                    {
+                        log.LogError($"'{looseClass.ClassName}' had parse errors");
+                        return log;
+                    }
+                    catch (Exception exception)
+                    {
+                        log.LogError($"Exception while compiling '{looseClass.ClassName}': {exception}");
+                        return log;
+                    }
+                }
+            }
+
+            foreach ((UClass uClass, Action action) in completions)
+            {
+                try
+                {
+                    action();
+                    uClass.Export.WriteBinary(uClass);
+                }
+                catch (Exception e)
+                {
+                    var log = new MessageLog();
+                    log.LogError($"Exception while compiling '{uClass.Export.ObjectName}': {e}");
+                    return log;
+                }
+            }
+
+            return new MessageLog();
+        }
+
+        private static bool FindOrCreatePackagePath(IEnumerable<string> packagePath, IMEPackage targetPcc, PackageCache cache, out IEntry leafPackage, out MessageLog log)
+        {
+            // TODO do I want to be able to explicitly create part of the path as import packages? does it matter?
+            if (!packagePath.Any())
+            {
+                log = null;
+                leafPackage = null;
+                return true;
+            }
+
+            IEntry parent = null;
+            string pathSoFar = "";
+
+            foreach (string pathSection in packagePath)
+            {
+                if (pathSoFar == "")
+                {
+                    pathSoFar = pathSection;
+                }
+                else
+                {
+                    pathSoFar += "." + pathSection;
+                }
+
+                var package = targetPcc.FindEntry(pathSoFar);
+                if (package is not null && package.ClassName is not "Package")
+                {
+                    log = new MessageLog();
+                    log.LogError($"Could not create package '{pathSoFar}', as an existing non-package entry at the same instanced path exists.");
+                    leafPackage = null;
+                    return false;
+                }
+                package ??= ExportCreator.CreatePackageExport(targetPcc, pathSection, parent: parent, cache: cache);
+                parent = package;
+            }
+
+            leafPackage = parent;
+            log = null;
+            return true;
+        }
+
         public record LooseClassPackage(string PackageName, List<LooseClass> Classes);
 
-        public static MessageLog CompileLooseClasses(IMEPackage targetPcc, List<LooseClassPackage> looseClasses, Func<IMEPackage, string, IEntry> missingObjectResolver, 
+        public static MessageLog CompileLooseClasses(IMEPackage targetPcc, List<LooseClassPackage> looseClasses, Func<IMEPackage, string, IEntry> missingObjectResolver,
             string gameRootPath = null, PackageCache cache = null, Func<string, List<string>> vtableDonorGetter = null)
         {
             using var packageCache = new PackageCache();
@@ -1076,7 +1210,7 @@ namespace LegendaryExplorerCore.UnrealScript
                 {
                     MessageLog log = looseClass.Log;
                     Class cls = looseClass.ClassAST;
-                    
+
                     try
                     {
                         CompileNewClassASTInternal(targetPcc, cls, log, symbols, null, ref vfTableChanged, missingObjectResolver, vtableDonorGetter?.Invoke(cls.Name));
