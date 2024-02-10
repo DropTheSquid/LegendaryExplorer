@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using LegendaryExplorer.Dialogs;
+using LegendaryExplorer.Misc;
 using LegendaryExplorerCore.Helpers;
 using LegendaryExplorerCore.Kismet;
 using LegendaryExplorerCore.Packages;
@@ -31,21 +34,104 @@ namespace LegendaryExplorer.Tools.Sequence_Editor.Experiments
                     var y = seqObj.OffsetY;
                     var knownX = seqObj.Export.GetProperty<IntProperty>("ObjPosX")?.Value;
                     var knownY = seqObj.Export.GetProperty<IntProperty>("ObjPosY")?.Value;
-                    if (knownX != null && knownY != null)
+
+                    if (knownX == null && knownY == null)
                     {
-                        if (knownX.Value == (int)Math.Round(x) && knownY.Value == (int)Math.Round(y))
-                        {
-                            Debug.WriteLine("YAY");
-                        }
-                    }
-                    else
-                    {
-                        Debug.WriteLine($"X: {y} Y: {x} for {seqObj.Export.InstancedFullPath}");
+                        Debug.WriteLine($"X: {x} Y: {y} for {seqObj.Export.InstancedFullPath}");
                         seqObj.Export.WriteProperty(new IntProperty((int)x, "ObjPosX"));
                         seqObj.Export.WriteProperty(new IntProperty((int)y, "ObjPosY"));
                     }
+                    else
+                    {
+                        if (knownX != null && knownX.Value != (int)Math.Round(x))
+                        {
+                            Debug.WriteLine($"X: {x} for {seqObj.Export.InstancedFullPath}");
+                            seqObj.Export.WriteProperty(new IntProperty((int)x, "ObjPosX"));
+                        }
+                        if (knownY != null && knownY.Value != (int)Math.Round(y))
+                        {
+                            Debug.WriteLine($"Y: {y} for {seqObj.Export.InstancedFullPath}");
+                            seqObj.Export.WriteProperty(new IntProperty((int)y, "ObjPosY"));
+                        }
+                    }
                 }
             }
+        }
+
+        /// <summary>
+        /// Installs a sequence from a package to another package
+        /// </summary>
+        /// <param name="seqEd"></param>
+        /// <returns></returns>
+        public static ExportEntry InstallSequencePrefab(SequenceEditorWPF seqEd)
+        {
+            OpenFileDialog ofd = AppDirectories.GetOpenPackageDialog();
+            bool reload = false;
+            var result = ofd.ShowDialog();
+            if (result.HasValue && result.Value)
+            {
+                // Open package and have user select sequence to import
+                using var p = MEPackageHandler.OpenMEPackage(ofd.FileName, forceLoadFromDisk: true); // Force load from disk as we will be making changes to remove sequence parent refs
+                var sequenceToImport = EntrySelector.GetEntry<ExportEntry>(seqEd, p, "Select a sequence to import and add to this sequence.", x => x.ClassName == "Sequence");
+                if (sequenceToImport == null)
+                {
+                    return null;
+                }
+
+                var parentSequence = seqEd.SelectedSequence ?? seqEd.Pcc.FindExport("TheWorld.PersistentLevel.Main_Sequence");
+                return InstallSequencePrefab(sequenceToImport, parentSequence);
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Copies a sequence from one package to another
+        /// </summary>
+        /// <param name="sequenceToImport"></param>
+        /// <param name="targetParentSequence"></param>
+        /// <returns></returns>
+        public static ExportEntry InstallSequencePrefab(ExportEntry sequenceToImport, ExportEntry targetParentSequence)
+        {
+            // Prevents bringing additional stuff over
+
+            var sourceIdxLink = sequenceToImport.idxLink;
+            var parentSeqProp = sequenceToImport.GetProperty<ObjectProperty>("ParentSequence");
+
+            sequenceToImport.idxLink = 0;
+            sequenceToImport.RemoveProperty("ParentSequence");
+
+
+            EntryImporter.ImportAndRelinkEntries(EntryImporter.PortingOption.CloneAllDependencies, sequenceToImport,
+                targetParentSequence.FileRef, targetParentSequence, true, new RelinkerOptionsPackage(),
+                out var newUiSeq);
+            var expCount =
+                targetParentSequence.FileRef.Exports.Count(x => x.InstancedFullPath == newUiSeq.InstancedFullPath);
+            if (expCount > 1)
+            {
+                // update the index
+                newUiSeq.ObjectName = targetParentSequence.FileRef.GetNextIndexedName(sequenceToImport.ObjectName.Name);
+            }
+
+            var installedSequence = newUiSeq as ExportEntry;
+
+            // These properties are not used by game and are only for developer reference;
+            // They are useful to track where a sequence came from and when it was installed, in the event that you
+            // change the backing prefab and need to know when this was installed
+            installedSequence.WriteProperty(new StrProperty(sequenceToImport.FileRef.FileNameNoExtension ?? "(null)", "ModSourcePackageName"));
+            installedSequence.WriteProperty(new StrProperty(DateTime.Now.ToString(CultureInfo.InvariantCulture), "PrefabInstallTime"));
+
+            KismetHelper.AddObjectToSequence(installedSequence, targetParentSequence);
+
+            // Restore the data so we don't technically 'modify' the source
+            // This will mark that export as modified technically.
+            sequenceToImport.idxLink = sourceIdxLink;
+            if (parentSeqProp != null)
+            {
+                sequenceToImport.WriteProperty(parentSeqProp);
+            }
+
+            return newUiSeq as ExportEntry;
         }
 
         /// <summary>
@@ -88,32 +174,49 @@ namespace LegendaryExplorer.Tools.Sequence_Editor.Experiments
             }
         }
 
-        public static void LoadCustomClasses(SequenceEditorWPF seqEd)
+        public static void LoadCustomClassesFromFile(SequenceEditorWPF seqEd)
         {
-            OpenFileDialog ofd = new OpenFileDialog()
-            {
-                Filter = GameFileFilters.OpenFileFilter
-            };
+            OpenFileDialog ofd = AppDirectories.GetOpenPackageDialog();
             bool reload = false;
             var result = ofd.ShowDialog();
             if (result.HasValue && result.Value)
             {
                 using var p = MEPackageHandler.OpenMEPackage(ofd.FileName, forceLoadFromDisk: true);
-                foreach (var e in p.Exports.Where(x => x.IsClass && x.InheritsFrom("SequenceObject")))
-                {
-                    var classInfo = GlobalUnrealObjectInfo.generateClassInfo(e);
-                    var defaults = p.GetUExport(ObjectBinary.From<UClass>(e).Defaults);
-                    Debug.WriteLine($@"Inventorying {e.InstancedFullPath}");
-                    GlobalUnrealObjectInfo.GenerateSequenceObjectInfoForClassDefaults(defaults);
-                    GlobalUnrealObjectInfo.InstallCustomClassInfo(e.ObjectName, classInfo, e.Game);
-                    reload = true;
-                }
+                reload = LoadCustomClassesFromPackage(p);
             }
 
             if (reload)
             {
                 seqEd.RefreshToolboxItems();
             }
+        }
+
+        public static void LoadCustomClassesFromCurrentPackage(SequenceEditorWPF seqEd)
+        {
+            if (seqEd.Pcc == null)
+                return;
+
+            if (LoadCustomClassesFromPackage(seqEd.Pcc))
+            {
+                seqEd.RefreshToolboxItems();
+            }
+        }
+
+
+        private static bool LoadCustomClassesFromPackage(IMEPackage p)
+        {
+            var reload = false;
+            foreach (var e in p.Exports.Where(x => x.IsClass && x.InheritsFrom("SequenceObject")))
+            {
+                var classInfo = GlobalUnrealObjectInfo.generateClassInfo(e);
+                var defaults = p.GetUExport(ObjectBinary.From<UClass>(e).Defaults);
+                Debug.WriteLine($@"Inventorying {e.InstancedFullPath}");
+                GlobalUnrealObjectInfo.GenerateSequenceObjectInfoForClassDefaults(defaults);
+                GlobalUnrealObjectInfo.InstallCustomClassInfo(e.ObjectName, classInfo, e.Game);
+                reload = true;
+            }
+
+            return reload;
         }
 
         public static void ConvertSeqAct_Log_objComments(IMEPackage package, PackageCache cache = null)

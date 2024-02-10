@@ -91,7 +91,7 @@ namespace LegendaryExplorer.Tools.TextureStudio
             }
             else
             {
-                using var package = MEPackageHandler.UnsafePartialLoad(Path.Combine(SelectedFolder, SelectedInstance.RelativePackagePath), x=>x.InstancedFullPath == SelectedInstance.ExportPath); // do not open the full package
+                using var package = MEPackageHandler.UnsafePartialLoad(Path.Combine(SelectedFolder, SelectedInstance.RelativePackagePath), x => x.InstancedFullPath == SelectedInstance.ExportPath); // do not open the full package
                 TextureViewer_ExportLoader.LoadExport(package.FindExport(SelectedInstance.ExportPath));
             }
         }
@@ -167,8 +167,6 @@ namespace LegendaryExplorer.Tools.TextureStudio
             {
                 InitWorkspace(fileName);
             });
-            MessageBox.Show(
-                @"Texture Studio is in development and is not finished. It will have usability problems AND IT MAY POTENTIALLY HAVE MOD BREAKING BUGS. TAKE FULL BACKUPS OF YOUR MOD FOLDER BEFORE USING THIS TOOL!");
         }
 
         private void InitWorkspace(string workspacepath)
@@ -237,7 +235,8 @@ namespace LegendaryExplorer.Tools.TextureStudio
             var selectDDS = new OpenFileDialog
             {
                 Title = "Select texture file",
-                Filter = "Texture (DDS PNG BMP TGA)|*.dds;*.png;*.bmp;*.tga"
+                Filter = "Texture (DDS PNG BMP TGA)|*.dds;*.png;*.bmp;*.tga",
+                CustomPlaces = AppDirectories.GameCustomPlaces
             };
             var result = selectDDS.ShowDialog();
             if (result.HasValue && result.Value)
@@ -794,9 +793,13 @@ namespace LegendaryExplorer.Tools.TextureStudio
                         if (packageInstance.RelativePackagePath.Contains(@"DLC_MOD_"))
                         {
                             var dlcFolderName = packageInstance.RelativePackagePath.Substring(packageInstance.RelativePackagePath.IndexOf(@"DLC_MOD_"));
-                            dlcFolderName = dlcFolderName.Substring(0, dlcFolderName.IndexOf(@"\"));
-                            TFCSuffix = dlcFolderName;
-                            break;
+                            var dlcIndex = dlcFolderName.IndexOf(@"\");
+                            if (dlcIndex > 0)
+                            {
+                                dlcFolderName = dlcFolderName.Substring(0, dlcIndex);
+                                TFCSuffix = dlcFolderName;
+                                break;
+                            }
                         }
                     }
 
@@ -866,6 +869,7 @@ namespace LegendaryExplorer.Tools.TextureStudio
             {
                 var decompressed = dpackage.DecompressEntry(tf);
                 var package = MEPackageHandler.OpenMEPackageFromStream(decompressed, tf.FileName);
+                package.IsMemoryPackage = true;
                 foreach (var f in package.Exports.Where(x => x.IsTexture()))
                 {
                     var t2d = ObjectBinary.From<UTexture2D>(f);

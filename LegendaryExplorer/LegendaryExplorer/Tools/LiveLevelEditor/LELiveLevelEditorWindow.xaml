@@ -80,9 +80,9 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <StackPanel Grid.Row="0">
-                            <TextBlock Text="You MUST regenerate the actor list whenever you move to a new area of the level, as what is loaded may have changed"
-                                       Margin="15,5,15,5" TextWrapping="Wrap" MaxWidth="330" />
-                            <Button Margin="15,0,15,6" Content="Regenerate Actor List"
+                            <TextBlock Text="The actor list will automatically stay up to date as levels are loaded and unloaded, but you can force reload if neccesary."
+                                       Margin="15,5,15,5" TextWrapping="Wrap" TextAlignment="Center"/>
+                            <Button Margin="15,0,15,6" Content="Manually Regenerate Actor List"
                                     Command="{Binding RegenActorListCommand}" />
                         </StackPanel>
                         <Grid Grid.Row="1">
@@ -99,8 +99,14 @@
                             </Grid.RowDefinitions>
                             <controls:ListBoxScroll x:Name="listBoxPackages" ItemsSource="{Binding ActorDict}" DisplayMemberPath="Key" SelectedValuePath="Value" ContextMenu="{StaticResource packagesContextMenu}" Grid.Row="0" Grid.RowSpan="3"/>
                             <Border BorderBrush="LightSlateGray" BorderThickness="0.65" Grid.Row="0" Grid.Column="2" >
-                                <controls:ListBoxScroll ItemsSource="{Binding SelectedValue, ElementName=listBoxPackages}" DisplayMemberPath="DisplayText" SelectedItem="{Binding SelectedActor}"
-                                                        ContextMenu="{StaticResource actorsContextMenu}"/>
+                                <DockPanel>
+                                    <controls:SearchBox x:Name="actorFilterSearchBox" DockPanel.Dock="Top" WatermarkText="Filter Actors (In selected file)" TextChanged="ActorFilterSearchBox_OnTextChanged"/>
+                                    <controls:ListBoxScroll
+                                        ItemsSource="{Binding SelectedValue, ElementName=listBoxPackages}"
+                                        DisplayMemberPath="DisplayText" SelectedItem="{Binding SelectedActor}"
+                                        ContextMenu="{StaticResource actorsContextMenu}"
+                                        sharedUi:Filter.By="{Binding ActorFilter}" />
+                                </DockPanel>
                             </Border>
                             <editorPanels:LLEActorEditorPanel x:Name="ActorEditorPanel" Grid.Row="2" Grid.Column="2"/>
 

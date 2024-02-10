@@ -33,8 +33,7 @@ namespace LegendaryExplorerCore.UnrealScript.Parsing
             ASTNodeType.SwitchStatement,
             ASTNodeType.CaseStatement,
             ASTNodeType.DefaultStatement,
-            ASTNodeType.StateLabel,
-            ASTNodeType.ReplicationStatement
+            ASTNodeType.StateLabel
         };
 
         public static readonly List<ASTNodeType> CompositeTypes = new()
@@ -72,6 +71,19 @@ namespace LegendaryExplorerCore.UnrealScript.Parsing
         protected void TypeError(string msg, int start = -1, int end = -1)
         {
             Log.LogError(msg, start, end);
+        }
+
+        protected void LogWarning(string msg, ScriptToken token)
+        {
+            token.SyntaxType = EF.ERROR;
+            LogWarning(msg, token.StartPos, token.EndPos);
+        }
+
+        protected void LogWarning(string msg, ASTNode node) => LogWarning(msg, node.StartPos, node.EndPos);
+
+        protected void LogWarning(string msg, int start = -1, int end = -1)
+        {
+            Log.LogWarning(msg, start, end);
         }
 
         public VariableIdentifier ParseVariableName()
@@ -184,7 +196,7 @@ namespace LegendaryExplorerCore.UnrealScript.Parsing
                     throw ParseError("Expected class name!", CurrentPosition);
                 }
 
-                classNameToken.SyntaxType = EF.TypeName;
+                classNameToken.SyntaxType = EF.Class;
 
                 if (Consume(TokenType.RightArrow) is null)
                 {
@@ -199,7 +211,7 @@ namespace LegendaryExplorerCore.UnrealScript.Parsing
                 return null;
             }
 
-            type.SyntaxType = type.Value is INT or FLOAT or BOOL or BYTE or BIOMASK4 or STRING or STRINGREF or NAME ? EF.Keyword : EF.TypeName;
+            type.SyntaxType = type.Value is INT or FLOAT or BOOL or BYTE or BIOMASK4 or STRING or STRINGREF or NAME ? EF.Keyword : EF.Class;
             return new VariableType(type.Value, type.StartPos, type.EndPos);
         }
 
@@ -521,7 +533,7 @@ namespace LegendaryExplorerCore.UnrealScript.Parsing
 
         protected ObjectLiteral ParseObjectLiteral(ScriptToken className, ScriptToken objName, bool noActors = true)
         {
-            className.SyntaxType = EF.TypeName;
+            className.SyntaxType = EF.Class;
             bool isClassLiteral = className.Value.CaseInsensitiveEquals(CLASS);
 
             var classType = new VariableType((isClassLiteral ? objName : className).Value);

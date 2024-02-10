@@ -1,10 +1,11 @@
 ﻿using System.Diagnostics;
 using System.IO;
-using System.Windows.Forms;
+using LegendaryExplorer.Misc;
 using LegendaryExplorerCore.Helpers;
 using LegendaryExplorerCore.Packages;
 using LegendaryExplorerCore.Unreal;
 using LegendaryExplorerCore.Unreal.BinaryConverters;
+using Microsoft.Win32;
 
 namespace LegendaryExplorer.UnrealExtensions.Classes
 {
@@ -34,16 +35,21 @@ namespace LegendaryExplorer.UnrealExtensions.Classes
                     ws.ImportWwiseOgg(pathtoafc + ws.Filename + ".afc", stream);
                 else
                 {
-                    OpenFileDialog d = new OpenFileDialog();
+                    OpenFileDialog d = new OpenFileDialog()
+                    {
+                        CustomPlaces = AppDirectories.GameCustomPlaces
+                    };
                     d.Filter = ws.Filename + ".afc|" + ws.Filename + ".afc";
-                    if (d.ShowDialog() == DialogResult.OK)
+                    if (d.ShowDialog() == true)
                         ws.ImportWwiseOgg(d.FileName, stream);
                 }
 
                 // Update the AFC name - it might be changing
                 if (forcedAFCBaseName != null)
+                {
                     ws.Export.WriteProperty(new NameProperty(forcedAFCBaseName, "Filename")); // Update the filename
-
+                    ws.Filename = forcedAFCBaseName;
+                }
             }
             else if (forcedAFCBaseName != null)
             {
@@ -52,13 +58,13 @@ namespace LegendaryExplorer.UnrealExtensions.Classes
                 var savePath = Path.Combine(Directory.GetParent(ws.Export.FileRef.FilePath).FullName, forcedAFCBaseName+".afc");
                 ws.ImportWwiseOgg(savePath, stream);
                 ws.Export.WriteProperty(new NameProperty(forcedAFCBaseName, "Filename")); // Update the filename
-
+                ws.Filename = forcedAFCBaseName;
             }
             else
             {
                 OpenFileDialog d = new OpenFileDialog();
                 d.Filter = ws.Filename + ".afc|" + ws.Filename + ".afc";
-                if (d.ShowDialog() == DialogResult.OK)
+                if (d.ShowDialog() == true)
                     ws.ImportWwiseOgg(d.FileName, stream);
             }
         }

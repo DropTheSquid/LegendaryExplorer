@@ -84,13 +84,6 @@ namespace LegendaryExplorer.GameInterop
             }
         }
 
-        public static string GetInteropAsiWritePath(MEGame game)
-        {
-            string asiDir = GetAsiDir(game);
-            string interopASIWritePath = Path.Combine(asiDir, GameController.GetInteropTargetForGame(game).InteropASIName);
-            return interopASIWritePath;
-        }
-
         public static string GetAsiDir(MEGame game)
         {
             string asiDir = MEDirectories.GetASIPath(game);
@@ -136,10 +129,13 @@ namespace LegendaryExplorer.GameInterop
                 var binkVersionInfo = FileVersionInfo.GetVersionInfo(binkPath);
                 var binkProductName = binkVersionInfo.ProductName ?? "";
 
-                return File.Exists(binkPath) && File.Exists(originalBinkPath)
-                                             && target.OriginalBinkMD5 == CalculateMD5(originalBinkPath)
-                                             && binkProductName.StartsWith("LEBinkProxy", StringComparison.CurrentCultureIgnoreCase)
-                                             && binkVersionInfo.ProductMajorPart >= 2;
+                if (!File.Exists(binkPath) || !File.Exists(originalBinkPath)) return false;
+                var hash = CalculateMD5(originalBinkPath);
+
+                // This extra hash is enhanced 2022.05 bink version (Mod Manager 8.1 installs this)
+                return (target.OriginalBinkMD5 == hash || @"31d1d74866061bf66baad1cc4db3c19e" == hash)
+                       && binkProductName.StartsWith("LEBinkProxy", StringComparison.CurrentCultureIgnoreCase)
+                       && binkVersionInfo.ProductMajorPart >= 2;
             }
             return false;
         }
@@ -217,12 +213,38 @@ namespace LegendaryExplorer.GameInterop
             }
         }
 
-        public static void OpenConsoleExtensionDownload()
+        public static void OpenME3ConsoleExtensionDownload()
         {
             HyperlinkExtensions.OpenURL("https://github.com/ME3Tweaks/ME3-ASI-Plugins/releases/tag/v1.0-ConsoleExtension");
         }
 
-        public static void OpenInteropASIDownload(MEGame game) => HyperlinkExtensions.OpenURL(GameController.GetInteropTargetForGame(game).InteropASIDownloadLink);
+        public static void OpenInteropASIDownload(MEGame game)
+        {
+            // Allow if the build number is 127 or higher (ME3Tweaks Mod Manager 8.0.1 Beta)
+
+            bool requestedInstall = false;
+            if (ModManagerIntegration.GetModManagerBuildNumber() >= 127)
+            {
+                switch (game)
+                {
+                    case MEGame.LE1:
+                        requestedInstall = ModManagerIntegration.RequestASIInstallation(game, ASIModIDs.LE1_LEX_INTEROP);
+                        break;
+                    case MEGame.LE2:
+                        requestedInstall = ModManagerIntegration.RequestASIInstallation(game, ASIModIDs.LE2_LEX_INTEROP);
+                        break;
+                    case MEGame.LE3:
+                        requestedInstall = ModManagerIntegration.RequestASIInstallation(game, ASIModIDs.LE3_LEX_INTEROP);
+                        break;
+                }
+            }
+
+            if (!requestedInstall)
+            {
+                HyperlinkExtensions.OpenURL(GameController.GetInteropTargetForGame(game).InteropASIDownloadLink);
+            }
+        }
+
 
         public static bool IsGameInstalled(MEGame game) => MEDirectories.GetExecutablePath(game) is string exePath && File.Exists(exePath);
 
@@ -269,7 +291,7 @@ namespace LegendaryExplorer.GameInterop
 
             // For debugging
             // Thread.Sleep(3000);
-
+            Debug.WriteLine($"SendMessageToGame({game}): {message}");
             pipeWriter.WriteLine(message); // Messages will end with \r\n when received in c++!
             pipeWriter.Flush();
 

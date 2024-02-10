@@ -19,7 +19,9 @@ namespace LegendaryExplorerCore.UnrealScript.Parsing
         private readonly Stack<Class> SubObjectClasses;
         private readonly IMEPackage Pcc;
         private readonly bool IsStructDefaults;
+        private readonly bool IsInDefaultsTree;
         private readonly ObjectType Outer;
+        private Func<IMEPackage, string, IEntry> MissingObjectResolver;
         private bool InSubOject;
 
         public static void ParseStructDefaults(Struct s, IMEPackage pcc, SymbolTable symbols, MessageLog log)
@@ -32,20 +34,23 @@ namespace LegendaryExplorerCore.UnrealScript.Parsing
             var defaults = s.DefaultProperties;
             if (defaults.Tokens is not null)
             {
-                Parse(defaults, pcc, symbols, log);
+                Parse(defaults, pcc, symbols, log, false);
             }
             symbols.PopScope();
         }
 
-        public static void Parse(DefaultPropertiesBlock propsBlock, IMEPackage pcc, SymbolTable symbols, MessageLog log)
+        public static void Parse(DefaultPropertiesBlock propsBlock, IMEPackage pcc, SymbolTable symbols, MessageLog log, bool isInDefaultsTree, Func<IMEPackage, string, IEntry> missingObjectResolver = null)
         {
-            var parser = new PropertiesBlockParser(propsBlock, pcc, symbols, log);
+            var parser = new PropertiesBlockParser(propsBlock, pcc, symbols, log, isInDefaultsTree)
+            {
+                MissingObjectResolver = missingObjectResolver
+            };
             var statements = parser.Parse(false);
 
             propsBlock.Statements = statements;
         }
 
-        private PropertiesBlockParser(DefaultPropertiesBlock propsBlock, IMEPackage pcc, SymbolTable symbols, MessageLog log)
+        private PropertiesBlockParser(DefaultPropertiesBlock propsBlock, IMEPackage pcc, SymbolTable symbols, MessageLog log, bool isInDefaultsTree)
         {
             Symbols = symbols;
             Log = log;
@@ -53,6 +58,7 @@ namespace LegendaryExplorerCore.UnrealScript.Parsing
             Pcc = pcc;
             Outer = (ObjectType)propsBlock.Outer;
             IsStructDefaults = Outer is Struct;
+            IsInDefaultsTree = isInDefaultsTree;
 
             SubObjectClasses = new Stack<Class>();
             ExpressionScopes = new Stack<ObjectType>();
@@ -97,6 +103,10 @@ namespace LegendaryExplorerCore.UnrealScript.Parsing
                 if (IsStructDefaults)
                 {
                     throw ParseError($"SubObjects are not allowed in {STRUCTDEFAULTPROPERTIES}!", CurrentPosition);
+                }
+                if (!IsInDefaultsTree)
+                {
+                    TypeError("SubObjects are only allowed in Default objects", CurrentPosition);
                 }
                 return ParseSubobjectDeclaration();
             }
@@ -162,7 +172,7 @@ namespace LegendaryExplorerCore.UnrealScript.Parsing
             {
                 throw ParseError("Expected name of class!", CurrentPosition);
             }
-            classNameToken.SyntaxType = EF.TypeName;
+            classNameToken.SyntaxType = EF.Class;
 
             if (!Symbols.TryGetType(classNameToken.Value, out Class objectClass))
             {
@@ -306,7 +316,7 @@ namespace LegendaryExplorerCore.UnrealScript.Parsing
             {
                 if (targetType is not Struct targetStruct)
                 {
-                    throw ParseError($"A '{{' is used to start a struct. Expected a {targetType.FullTypeName()} literal!", CurrentPosition);
+                    throw ParseError($"A '{{' is used to start a struct. Expected a {targetType.DisplayName()} literal!", CurrentPosition);
                 }
                 literal = FinishStructLiteral(targetStruct);
             }
@@ -321,7 +331,7 @@ namespace LegendaryExplorerCore.UnrealScript.Parsing
                         ParseError("Use '{' for struct literals, not '('.", CurrentPosition);
                         goto default;
                     default:
-                        throw ParseError($"A '(' is used to start a dynamic array literal. Expected a {targetType.FullTypeName()} literal!", CurrentPosition);
+                        throw ParseError($"A '(' is used to start a dynamic array literal. Expected a {targetType.DisplayName()} literal!", CurrentPosition);
                 }
             }
             else
@@ -445,9 +455,12 @@ namespace LegendaryExplorerCore.UnrealScript.Parsing
                         VariableType valueClass;
                         if (literal is ObjectLiteral objectLiteral)
                         {
-                            if (Pcc.FindEntry(objectLiteral.Name.Value) is not IEntry)
+                            if (objectLiteral.Class is not ClassType && Pcc.FindEntry(objectLiteral.Name.Value) is null)
                             {
-                                TypeError($"Could not find '{objectLiteral.Name.Value}' in this file!");
+                                if (MissingObjectResolver?.Invoke(Pcc, objectLiteral.Name.Value) is null)
+                                {
+                                    TypeError($"Could not find '{objectLiteral.Name.Value}' in this file!");
+                                }
                             }
                             valueClass = objectLiteral.Class;
                         }
@@ -479,7 +492,14 @@ namespace LegendaryExplorerCore.UnrealScript.Parsing
                         }
                         else if (targetClassLimiter.ClassLimiter != literalClassType.ClassLimiter && !((Class)literalClassType.ClassLimiter).SameAsOrSubClassOf(targetClassLimiter.ClassLimiter.Name))
                         {
-                            TypeError($"Cannot assign a value of type '{literalClassType.FullTypeName()}' to a variable of type '{targetClassLimiter.FullTypeName()}'.", literal);
+                            if (literalClassType.ClassLimiter.Name is "BioDeprecated")
+                            {
+                                LogWarning("Use of BioDeprecated! If this is pre-existing it's probably fine, but do not write new code like this.");
+                            }
+                            else
+                            {
+                                TypeError($"Cannot assign a value of type '{literalClassType.DisplayName()}' to a variable of type '{targetClassLimiter.DisplayName()}'.", literal);
+                            }
                         }
                     }
 

@@ -23,13 +23,7 @@ namespace LegendaryExplorerCore.Packages
         public const string OODLE_DLL_NAME = @"oo2core_8_win64.dll";
 #endif
 
-#if WINDOWS
         public const string COMPRESSION_WRAPPER_NAME = "CompressionWrappers.dll";
-#elif MACOS
-        public const string COMPRESSION_WRAPPER_NAME = "IDK";
-#elif LINUX
-        public const string COMPRESSION_WRAPPER_NAME = "libCompressionWrappers.so";
-#endif
 
         /// <summary>
         /// Maximum size of a compressed chunk. This is not relevant for the table chunk or if an export is larger than the max chunk size
@@ -60,7 +54,7 @@ namespace LegendaryExplorerCore.Packages
             public Memory<byte> Compressed;
             //public byte[] Uncompressed;
             public ChunkHeader header;
-            public List<Block> blocks;
+            public Block[] blocks;
         }
 
         /// <summary>
@@ -83,7 +77,7 @@ namespace LegendaryExplorerCore.Packages
             public int compressedsize;
             public int uncompressedsize;
             public int uncompressedOffset;
-            public Memory<byte> uncompressedData;
+            public ArraySegment<byte> uncompressedData;
             public byte[] compressedData;
         }
 
@@ -282,7 +276,7 @@ namespace LegendaryExplorerCore.Packages
                 int blockCount = c.header.uncompressedsize / c.header.blocksize;
                 if (c.header.uncompressedsize % c.header.blocksize != 0) blockCount++;
 
-                c.blocks = new List<Block>(blockCount);
+                c.blocks = new Block[blockCount];
                 //DebugOutput.PrintLn("\t\t" + count + " Read Blockheaders...");
                 int blockUncompressedOffset = c.uncompressedOffset;
                 for (int j = 0; j < blockCount; j++)
@@ -297,7 +291,7 @@ namespace LegendaryExplorerCore.Packages
                     maxUncompressedBlockSize = Math.Max(b.uncompressedsize, maxUncompressedBlockSize); // find the max size to reduce allocations
                     //DebugOutput.PrintLn("Block " + j + ", compressed size = " + b.compressedsize + ", uncompressed size = " + b.uncompressedsize);
                     pos += 8;
-                    c.blocks.Add(b);
+                    c.blocks[j] = b;
                 }
 
                 //c.Uncompressed = new byte[c.uncompressedSize];
@@ -326,7 +320,7 @@ namespace LegendaryExplorerCore.Packages
 
             for (int i = 0; i < chunks.Count; i++)
             {
-                int pos = 16 + 8 * chunks[i].blocks.Count;
+                int pos = 16 + 8 * chunks[i].blocks.Length;
 
                 int currentUncompChunkOffset = 0;
                 int blocknum = 0;
@@ -483,7 +477,7 @@ namespace LegendaryExplorerCore.Packages
                 Chunk chunk = Chunks[chunkIdx];
                 Block b = chunk.blocks[blockIdx];
                 segStartPos = b.uncompressedOffset;
-                int blockstart = 16 + 8 * chunk.blocks.Count;
+                int blockstart = 16 + 8 * chunk.blocks.Length;
                 for (int i = 0; i < blockIdx; i++)
                 {
                     blockstart += chunk.blocks[i].compressedsize;
@@ -645,7 +639,7 @@ namespace LegendaryExplorerCore.Packages
                     Chunk chunk = Chunks[chunkIdx];
                     if (chunk.uncompressedOffset <= _position && chunk.uncompressedOffset + chunk.uncompressedSize > _position)
                     {
-                        for (blockIdx++; blockIdx < chunk.blocks.Count; blockIdx++)
+                        for (blockIdx++; blockIdx < chunk.blocks.Length; blockIdx++)
                         {
                             Block block = chunk.blocks[blockIdx];
                             if (block.uncompressedOffset <= _position && block.uncompressedOffset + block.uncompressedsize > _position)
@@ -726,7 +720,7 @@ namespace LegendaryExplorerCore.Packages
                             int blockCount = chunk.header.uncompressedsize / chunk.header.blocksize;
                             if (chunk.header.uncompressedsize % chunk.header.blocksize != 0) blockCount++;
 
-                            chunk.blocks = new List<Block>(blockCount);
+                            chunk.blocks = new Block[blockCount];
                             int blockUncompressedOffset = chunk.uncompressedOffset;
                             for (int j = 0; j < blockCount; j++)
                             {
@@ -737,10 +731,10 @@ namespace LegendaryExplorerCore.Packages
                                     uncompressedOffset = blockUncompressedOffset
                                 };
                                 blockUncompressedOffset += b.uncompressedsize;
-                                chunk.blocks.Add(b);
+                                chunk.blocks[j] = b;
                             }
                         }
-                        for (blockIdx++; blockIdx < chunk.blocks.Count; blockIdx++)
+                        for (blockIdx++; blockIdx < chunk.blocks.Length; blockIdx++)
                         {
                             Block block = chunk.blocks[blockIdx];
                             if (block.uncompressedOffset <= _position && block.uncompressedOffset + block.uncompressedsize > _position)

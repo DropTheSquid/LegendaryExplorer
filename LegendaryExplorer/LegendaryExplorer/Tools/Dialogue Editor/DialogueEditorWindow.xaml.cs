@@ -87,12 +87,8 @@ namespace LegendaryExplorer.DialogueEditor
             get => _SelectedSpeaker;
             set => SetProperty(ref _SelectedSpeaker, value);
         }
-        private Dictionary<string, int> _SelectedStarts = new();
-        public Dictionary<string, int> SelectedStarts
-        {
-            get => _SelectedStarts;
-            set => SetProperty(ref _SelectedStarts, value);
-        }
+        private readonly Dictionary<string, int> SelectedStarts = new();
+
         private int forcedSelectStart = -1;
         private string _SelectedScript = "None";
         public string SelectedScript
@@ -517,7 +513,7 @@ namespace LegendaryExplorer.DialogueEditor
         }
         private void OpenPackage()
         {
-            OpenFileDialog d = new() { Filter = GameFileFilters.OpenFileFilter };
+            OpenFileDialog d = AppDirectories.GetOpenPackageDialog();
             if (d.ShowDialog() == true)
             {
                 try
@@ -578,7 +574,10 @@ namespace LegendaryExplorer.DialogueEditor
                 Level = Path.GetFileName(Pcc.FilePath);
                 if (Pcc.Game.IsGame1())
                 {
-                    Level = $"{Level.Remove(Level.Length - 4)}_LOC_INT{Path.GetExtension(Pcc.FilePath)}";
+                    if (Pcc.Localization == MELocalization.None)
+                    {
+                        Level = $"{Level.Remove(Level.Length - 4)}_LOC_INT{Path.GetExtension(Pcc.FilePath)}";
+                    }
                 }
                 else
                 {
@@ -725,15 +724,13 @@ namespace LegendaryExplorer.DialogueEditor
                 SelectedSpeakerList.Add(spkr);
             }
         }
-        
+
         private void ParseNodeData(DialogueNodeExtended node)
         {
             try
             {
                 var nodeprop = node.NodeProp;
                 node.Listener = nodeprop.GetProp<IntProperty>("nListenerIndex");  //ME3//ME2//ME1
-                node.IsDefaultAction = false;
-                node.IsMajorDecision = false;
                 if (node.IsReply)
                 {
                     node.IsSkippable = false; //ME3/
@@ -753,14 +750,22 @@ namespace LegendaryExplorer.DialogueEditor
                 node.IsNonTextLine = nodeprop.GetProp<BoolProperty>("bNonTextLine");
                 node.IgnoreBodyGesture = nodeprop.GetProp<BoolProperty>("bIgnoreBodyGestures");
                 node.GUIStyle = Enums.Parse<EConvGUIStyles>(nodeprop.GetProp<EnumProperty>("eGUIStyle").Value.Name);
+                bool isNotGame3Reply = true;
                 if (Pcc.Game.IsGame3())
                 {
                     node.HideSubtitle = nodeprop.GetProp<BoolProperty>("bAlwaysHideSubtitle");
                     if (node.IsReply)
                     {
+                        isNotGame3Reply = false;
                         node.IsDefaultAction = nodeprop.GetProp<BoolProperty>("bIsDefaultAction");
                         node.IsMajorDecision = nodeprop.GetProp<BoolProperty>("bIsMajorDecision");
                     }
+                }
+                if (isNotGame3Reply)
+                {
+                    //cannot set these unconditionally earlier, since the propertychanged event will alter the nodeProp, overwriting the real value!
+                    node.IsDefaultAction = false;
+                    node.IsMajorDecision = false;
                 }
 
                 var lengthprop = node.Interpdata?.GetProperty<FloatProperty>("InterpLength");
@@ -784,7 +789,7 @@ namespace LegendaryExplorer.DialogueEditor
                 throw new Exception("DiagNodeParse Failed.", e);
             }
         }
-        
+
         public int ParseActorsNames(ConversationExtended conv, string tag)
         {
             if (Pcc.Game.IsGame1())
@@ -3364,7 +3369,7 @@ namespace LegendaryExplorer.DialogueEditor
                         seqEditor.Show();
                         if (uIndex != 0)
                         {
-                            seqEditor.LoadFile(filePath, uIndex);
+                            seqEditor.LoadFileAndGoTo(filePath, uIndex);
                         }
                         else seqEditor.LoadFile(filePath);
                     }
@@ -3382,7 +3387,7 @@ namespace LegendaryExplorer.DialogueEditor
                 graphEditor.Camera.AnimateViewToCenterBounds(tgt.GlobalFullBounds, false, 100);
                 graphEditor.Refresh();
             }
-            else if(suppressErrorMessageBox == false)
+            else if (suppressErrorMessageBox == false)
             {
                 MessageBox.Show($"\"{searchtext}\" not found");
             }

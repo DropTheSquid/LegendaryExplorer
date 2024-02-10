@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -32,6 +33,7 @@ using LegendaryExplorerCore.Misc;
 using LegendaryExplorerCore.Packages;
 using LegendaryExplorerCore.Packages.CloningImportingAndRelinking;
 using LegendaryExplorerCore.Shaders;
+using LegendaryExplorerCore.Sound.ISACT;
 using LegendaryExplorerCore.TLK.ME1;
 using LegendaryExplorerCore.Unreal;
 using LegendaryExplorerCore.Unreal.BinaryConverters;
@@ -40,6 +42,11 @@ using LegendaryExplorerCore.UnrealScript;
 using LegendaryExplorerCore.UnrealScript.Compiling.Errors;
 using Microsoft.Win32;
 using Microsoft.WindowsAPICodePack.Dialogs;
+using LegendaryExplorerCore.Audio;
+using System.IO.Packaging;
+using LegendaryExplorer.Packages;
+using LegendaryExplorerCore.Localization;
+using LegendaryExplorerCore.UnrealScript.Language.Tree;
 
 namespace LegendaryExplorer.Tools.PackageEditor
 {
@@ -65,11 +72,6 @@ namespace LegendaryExplorer.Tools.PackageEditor
             "World", "Package", "StaticMesh", "SkeletalMesh", "Sequence", "Material", "Function", "Class", "State",
             "TextureCube", "Bio2DA", "Bio2DANumberedRows"
         };
-
-        /// <summary>
-        /// Used to populate the metadata editor values so the list does not constantly need to rebuilt, which can slow down the program on large files like SFXGame or BIOC_Base.
-        /// </summary>
-        List<string> AllEntriesList;
 
         //Objects in this collection are displayed on the left list view (names, imports, exports)
 
@@ -180,8 +182,8 @@ namespace LegendaryExplorer.Tools.PackageEditor
         public ICommand NavigateForwardCommand { get; set; }
         public ICommand ForceReloadPackageCommand { get; set; }
         public ICommand ComparePackagesCommand { get; set; }
-        public ICommand OpenLEVersionCommand { get; set; }
-        public ICommand OpenOTVersionCommand { get; set; }
+        public ICommand OpenOtherVersionCommand { get; set; }
+        public ICommand OpenHighestMountedCommand { get; set; }
         public ICommand CompareToUnmoddedCommand { get; set; }
         public ICommand ExportAllDataCommand { get; set; }
         public ICommand ExportBinaryDataCommand { get; set; }
@@ -196,6 +198,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
         public ICommand CheckForDuplicateIndexesCommand { get; set; }
         public ICommand CheckForInvalidObjectPropertiesCommand { get; set; }
         public ICommand CheckForBrokenMaterialsCommand { get; set; }
+        public ICommand CheckForScriptErrorsCommand { get; set; }
         public ICommand EditNameCommand { get; set; }
         public ICommand AddNameCommand { get; set; }
         public ICommand CopyNameCommand { get; set; }
@@ -207,6 +210,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
         public ICommand TrashCommand { get; set; }
         public ICommand SetIndicesInTreeToZeroCommand { get; set; }
         public ICommand PackageHeaderViewerCommand { get; set; }
+        public ICommand LECLEditorCommand { get; set; }
         public ICommand CreateNewPackageGUIDCommand { get; set; }
         public ICommand RestoreExportCommand { get; set; }
         public ICommand SetPackageAsFilenamePackageCommand { get; set; }
@@ -237,12 +241,16 @@ namespace LegendaryExplorer.Tools.PackageEditor
         public ICommand ReplaceReferenceLinksCommand { get; set; }
         public ICommand CalculateExportMD5Command { get; set; }
         public ICommand CreateClassCommand { get; set; }
+        public ICommand CreatePackageExportCommand { get; set; }
+        public ICommand CreateObjectReferencerCommand { get; set; }
+        public ICommand DeleteEntryCommand { get; set; }
+
 
         private void LoadCommands()
         {
             CalculateExportMD5Command = new GenericCommand(CalculateExportMD5, ExportIsSelected);
-            CompareToUnmoddedCommand = new GenericCommand(CompareUnmodded, CanCompareToUnmodded);
-            ComparePackagesCommand = new GenericCommand(ComparePackages, PackageIsLoaded);
+            CompareToUnmoddedCommand = new GenericCommand(() => SharedPackageTools.ComparePackageToUnmodded(this, entryDoubleClickToTreeview), () => SharedPackageTools.CanCompareToUnmodded(this));
+            ComparePackagesCommand = new GenericCommand(() => SharedPackageTools.ComparePackageToAnother(this, entryDoubleClickToTreeview), PackageIsLoaded);
             ExportAllDataCommand = new GenericCommand(ExportAllData, ExportIsSelected);
             ExportBinaryDataCommand = new GenericCommand(ExportBinaryData, ExportIsSelected);
             ImportAllDataCommand = new GenericCommand(ImportAllData, ExportIsSelected);
@@ -255,6 +263,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
             CheckForDuplicateIndexesCommand = new GenericCommand(CheckForDuplicateIndexes, PackageIsLoaded);
             CheckForInvalidObjectPropertiesCommand = new GenericCommand(CheckForBadObjectPropertyReferences, PackageIsLoaded);
             CheckForBrokenMaterialsCommand = new GenericCommand(CheckForBrokenMaterials, IsLoadedPackageME);
+            CheckForScriptErrorsCommand = new GenericCommand(CheckForScriptErrors, IsLoadedPackageME);
             EditNameCommand = new GenericCommand(EditName, NameIsSelected);
             AddNameCommand = new RelayCommand(AddName, CanAddName);
             CopyNameCommand = new GenericCommand(CopyName, NameIsSelected);
@@ -267,6 +276,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
             SetIndicesInTreeToZeroCommand = new GenericCommand(SetIndicesInTreeToZero, TreeEntryIsSelected);
             TrashCommand = new GenericCommand(TrashEntryAndChildren, TreeEntryIsSelected);
             PackageHeaderViewerCommand = new GenericCommand(ViewPackageInfo, PackageIsLoaded);
+            LECLEditorCommand = new GenericCommand(EditLECLData, CanEditLECLData);
             PackageExportIsSelectedCommand = new EnableCommand(PackageExportIsSelected);
             CreateNewPackageGUIDCommand = new GenericCommand(GenerateNewGUIDForSelected, PackageExportIsSelected);
             SetPackageAsFilenamePackageCommand = new GenericCommand(SetSelectedAsFilenamePackage, PackageExportIsSelected);
@@ -299,8 +309,8 @@ namespace LegendaryExplorer.Tools.PackageEditor
             ExtractToPackageCommand = new GenericCommand(ExtractEntryToNewPackage, ExportIsSelected);
 
             RestoreExportCommand = new GenericCommand(RestoreExportData, ExportIsSelected);
-            OpenLEVersionCommand = new GenericCommand(() => OpenOtherVersion(true), IsLoadedPackageOT);
-            OpenOTVersionCommand = new GenericCommand(() => OpenOtherVersion(false), IsLoadedPackageLE);
+            OpenOtherVersionCommand = new GenericCommand(OpenOtherVersion, IsLoadedPackageME);
+            OpenHighestMountedCommand = new GenericCommand(OpenHighestMountedVersion, IsLoadedPackageME);
 
             ForceReloadPackageCommand = new GenericCommand(() => ExperimentsMenu.ForceReloadPackageWithoutSharing(), () => ShowExperiments && ExperimentsMenu.CanForceReload());
 
@@ -308,6 +318,163 @@ namespace LegendaryExplorer.Tools.PackageEditor
             NavigateBackCommand = new GenericCommand(NavigateToPreviousEntry, () => CurrentView == CurrentViewMode.Tree && BackwardsIndexes != null && BackwardsIndexes.Any());
 
             CreateClassCommand = new GenericCommand(CreateClass, IsLoadedPackageME);
+            CreatePackageExportCommand = new GenericCommand(CreatePackageExport, IsLoadedPackageME);
+            CreateObjectReferencerCommand = new GenericCommand(CreateObjectReferencer, IsLoadedPackageME);
+            DeleteEntryCommand = new GenericCommand(DeleteEntry, EntryIsSelected);
+        }
+
+        private void CreateObjectReferencer()
+        {
+            if (Pcc.Flags.HasFlag(UnrealFlags.EPackageFlags.Map))
+            {
+                MessageBox.Show(@"Map packages do not use ObjectReferencer; to keep objects in memory, add root objects to ExtraReferencedObjects in TheWorld's binary.");
+                return;
+            }
+
+            var objRef = Pcc.Exports.FirstOrDefault(x => x.ClassName == "ObjectReferencer" && !x.IsDefaultObject);
+            if (objRef != null)
+            {
+                GoToEntry(objRef.InstancedFullPath);
+                return;
+            }
+
+            // This part ported from Mass Effect 2 Randomizer POackag
+            var rop = new RelinkerOptionsPackage() { Cache = new PackageCache() };
+            var referencer = new ExportEntry(Pcc, 0, Pcc.GetNextIndexedName("ObjectReferencer"), properties: new PropertyCollection() { new ArrayProperty<ObjectProperty>("ReferencedObjects") })
+            {
+                Class = EntryImporter.EnsureClassIsInFile(Pcc, "ObjectReferencer", rop)
+            };
+            Pcc.AddExport(referencer);
+            GoToEntry(referencer.InstancedFullPath);
+        }
+
+        private void DeleteEntry()
+        {
+
+            TrashEntryAndChildren();
+        }
+
+        private void CheckForScriptErrors()
+        {
+            if (Pcc is null)
+            {
+                return;
+            }
+            BusyText = "Checking for Script errors...";
+            IsBusy = true;
+            Task.Run(() =>
+            {
+                var errors = new List<EntryStringPair>();
+
+                var fileLib = new FileLib(Pcc);
+                using var packageCache = new PackageCache();
+                if (fileLib.Initialize(packageCache))
+                {
+                    foreach (ExportEntry export in Pcc.Exports.Where(exp => exp.IsClass))
+                    {
+                        try
+                        {
+                            (_, string source) = UnrealScriptCompiler.DecompileExport(export, fileLib, packageCache);
+                            var log = new MessageLog();
+
+                            var (ast, _) = UnrealScriptCompiler.CompileOutlineAST(source, "Class", log, Pcc.Game);
+                            if (!log.HasErrors)
+                            {
+                                UnrealScriptCompiler.CompileNewClassAST(Pcc, (Class)ast, log, fileLib, out bool vfTableChanged);
+                                if (vfTableChanged)
+                                {
+                                    log.LogError("Virtual function table needs to be updated!");
+                                }
+                            }
+                            if (log.HasErrors)
+                            {
+                                errors.Add(new EntryStringPair(export, $"#{export.UIndex,-9}\t{export.InstancedFullPath}:\n{string.Join('\n', log.AllErrors)}"));
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            errors.Add(new EntryStringPair(export, $"{export.UIndex,-9}\t{export.InstancedFullPath}: EXCEPTION while checking for errors\n{e.FlattenException()}"));
+                        }
+                    }
+                }
+                else
+                {
+                    errors.Add(new EntryStringPair($"FileLib failed to initialize! Errors: \n{string.Join('\n', fileLib.InitializationLog.AllErrors)}"));
+                }
+                return errors;
+            }).ContinueWithOnUIThread(prevTask =>
+            {
+                IsBusy = false;
+                if (prevTask.Result.IsEmpty())
+                {
+                    MessageBox.Show(this, "No Script Errors found!");
+                }
+                else
+                {
+                    new ListDialog(prevTask.Result, "Script errors", "", this)
+                    {
+                        DoubleClickEntryHandler = entryDoubleClick
+                    }.Show();
+                }
+            });
+        }
+
+        private void OpenOtherVersion()
+        {
+            var result = CrossGenHelpers.FetchOppositeGenPackage(Pcc, out var otherGen);
+            if (result != null)
+            {
+                MessageBox.Show(result);
+            }
+            else
+            {
+                TryGetSelectedEntry(out var entry);
+                PackageEditorWindow pe = new PackageEditorWindow();
+                pe.LoadPackage(otherGen, goToEntry: entry?.InstancedFullPath);
+                pe.Show();
+            }
+        }
+
+        private void OpenHighestMountedVersion()
+        {
+            if (MEDirectories.GetBioGamePath(Pcc.Game) is null)
+            {
+                MessageBox.Show($"No {Pcc.Game} installation detected!");
+                return;
+            }
+            string fileName = Path.GetFileName(Pcc.FilePath);
+            if (!MELoadedFiles.TryGetHighestMountedFile(Pcc.Game, fileName, out string filePath))
+            {
+                MessageBox.Show($"No file named '{fileName}' was found in the {Pcc.Game} installation.");
+            }
+            else if (Path.GetFullPath(filePath) == Path.GetFullPath(Pcc.FilePath))
+            {
+                MessageBox.Show($"This is the highest mounted version of {fileName} in your {Pcc.Game} installation.");
+            }
+            else
+            {
+                TryGetSelectedEntry(out var entry);
+                var pe = new PackageEditorWindow();
+                pe.LoadFile(filePath, goToEntry: entry?.InstancedFullPath);
+                pe.Show();
+            }
+        }
+
+        // LECLData is only available on LE game files
+        private bool CanEditLECLData() => Pcc != null && Pcc.Game.IsLEGame();
+
+        private void EditLECLData()
+        {
+            new LECLDataEditorWindow(this, Pcc).ShowDialog();
+        }
+
+        private void CreatePackageExport()
+        {
+            var packName = PromptDialog.Prompt(this, "Enter a package name to create at the root.", "Enter package export name");
+            if (string.IsNullOrWhiteSpace(packName))
+                return;
+            var package = ExportCreator.CreatePackageExport(Pcc, packName);
+            GoToNumber(package.UIndex);
         }
 
         private void CreateClass()
@@ -329,11 +496,23 @@ namespace LegendaryExplorer.Tools.PackageEditor
 
                 if (existingPackages.Count is 0)
                 {
-                    MessageBox.Show(this, "Classes must be children of a Package export. Add one to the file first.");
+                    MessageBox.Show(this, "Classes must be child of a Package export. Add one to the file first.");
                     return;
                 }
+
+                IEntry defaultParent = null;
+                if (TryGetSelectedExport(out var currentExport) && (currentExport.Parent is null && currentExport.ClassName == "Package" || currentExport.Parent is { ClassName: "Package" }))
+                {
+                    // This will match both cases given the if statement.
+                    defaultParent = currentExport.Parent ?? currentExport;
+                }
+                else
+                {
+                    defaultParent = Pcc.Exports.FirstOrDefault(exp => exp.IsClass)?.Parent;
+                }
+
                 parent = EntrySelector.GetEntry<ExportEntry>(this, Pcc, "Pick a Package export your class should be a child of.",
-                    exp => existingPackages.Contains(exp), Pcc.Exports.FirstOrDefault(exp => exp.IsClass)?.Parent);
+                    exp => existingPackages.Contains(exp), defaultParent);
                 if (parent is null)
                 {
                     return;
@@ -379,61 +558,6 @@ namespace LegendaryExplorer.Tools.PackageEditor
                     result.Append(hash[i].ToString("x2"));
                 Clipboard.SetText(result.ToString());
             }
-        }
-
-
-        private bool IsLoadedPackageOT() => Pcc != null && Pcc.Game.IsOTGame();
-        private bool IsLoadedPackageLE() => Pcc != null && Pcc.Game.IsLEGame();
-        private bool IsLoadedPackageME() => Pcc != null && Pcc.Game.IsMEGame();
-
-        private void OpenOtherVersion(bool openLegendaryVersion)
-        {
-            var files = MELoadedFiles.GetFilesLoadedInGame(openLegendaryVersion
-                ? Pcc.Game.ToLEVersion()
-                : Pcc.Game.ToOTVersion());
-
-
-            var otherVerNameBase = Path.GetFileNameWithoutExtension(Pcc.FilePath);
-            if (Pcc.Game == MEGame.ME1 && openLegendaryVersion && otherVerNameBase == "BIOC_Base")
-                otherVerNameBase = "SFXGame";
-            if (Pcc.Game == MEGame.LE1 && !openLegendaryVersion && otherVerNameBase == "SFXGame")
-                otherVerNameBase = "BIOC_Base";
-
-            var otherVerName = $"{otherVerNameBase}.{(Pcc.Game == MEGame.LE1 ? "SFM" : "pcc")}";
-            if (files.TryGetValue(otherVerName, out var matchingVersion))
-            {
-                TryGetSelectedEntry(out var entry);
-                PackageEditorWindow pe = new PackageEditorWindow();
-                pe.LoadFile(matchingVersion, goToEntry: entry?.InstancedFullPath);
-                pe.Show();
-                return;
-            }
-
-
-            if (Pcc.Game == MEGame.LE1)
-            {
-                // try other extensions
-                otherVerName = $"{otherVerNameBase}.u";
-                if (files.TryGetValue(otherVerName, out var matchingVerMe1))
-                {
-                    TryGetSelectedEntry(out var entry);
-                    PackageEditorWindow pe = new PackageEditorWindow();
-                    pe.LoadFile(matchingVerMe1, goToEntry: entry?.InstancedFullPath);
-                    pe.Show();
-                    return;
-                }
-                otherVerName = $"{otherVerNameBase}.upk";
-                if (files.TryGetValue(otherVerName, out matchingVerMe1))
-                {
-                    TryGetSelectedEntry(out var entry);
-                    PackageEditorWindow pe = new PackageEditorWindow();
-                    pe.LoadFile(matchingVerMe1, goToEntry: entry?.InstancedFullPath);
-                    pe.Show();
-                    return;
-                }
-            }
-
-            MessageBox.Show($"Could not find {Path.GetFileName(Pcc.FilePath)} in the other version of this game.");
         }
 
         private void ResolveImportsTreeView()
@@ -497,7 +621,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
             {
                 BusyText = "Finding unmodded candidates...";
                 IsBusy = true;
-                return GetUnmoddedCandidatesForPackage();
+                return SharedPackageTools.GetUnmoddedCandidatesForPackage(this);
             }).ContinueWithOnUIThread(foundCandidates =>
             {
                 IsBusy = false;
@@ -527,71 +651,9 @@ namespace LegendaryExplorer.Tools.PackageEditor
 
         private void ExtractEntryToNewPackage()
         {
-            // This method is useful if you need to extract a portable asset easily
-            // It's very slow
-            string fileFilter;
-            switch (Pcc.Game)
+            if (SelectedItem.Entry is ExportEntry exp)
             {
-                case MEGame.ME1:
-                    fileFilter = GameFileFilters.ME1SaveFileFilter;
-                    break;
-                case MEGame.ME2:
-                case MEGame.ME3:
-                    fileFilter = GameFileFilters.ME3ME2SaveFileFilter;
-                    break;
-                default:
-                    string extension = Path.GetExtension(Pcc.FilePath);
-                    fileFilter = $"*{extension}|*{extension}";
-                    break;
-            }
-
-            var d = new SaveFileDialog { Filter = fileFilter };
-            if (d.ShowDialog() == true)
-            {
-                Func<List<EntryStringPair>> PortFunc = () => EntryExporter.ExportExportToFile(SelectedItem.Entry as ExportEntry, d.FileName, out _);
-                if (File.Exists(d.FileName))
-                {
-                    var portIntoExistingRes = MessageBox.Show(this, $"Export the selected export ({SelectedItem.Entry.InstancedFullPath}) into the selected file ({d.FileName})? Or port into a new file, overwriting it?\n\nPress Yes to port into the existing file.\nPress No to port as a new file\nPress cancel to abort", "Port into new or existing file?", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-                    if (portIntoExistingRes == MessageBoxResult.Yes)
-                    {
-                        PortFunc = () =>
-                        {
-                            using var package = MEPackageHandler.OpenMEPackage(d.FileName);
-                            var results = EntryExporter.ExportExportToFile(SelectedItem.Entry as ExportEntry, d.FileName, out _);
-                            package.Save();
-                            return results;
-                        };
-                    }
-                    else if (portIntoExistingRes == MessageBoxResult.Cancel)
-                    {
-                        return;
-                    } // No condition changes nothing
-                }
-                Task.Run(() => PortFunc.Invoke())
-                    .ContinueWithOnUIThread(results =>
-                        {
-                            IsBusy = false;
-                            var result = results.Result;
-                            if (result.Any())
-                            {
-                                MessageBox.Show("Extraction completed with issues.", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
-                                var ld = new ListDialog(result, "Extraction issues", "The following issues were detected while extracting to a new file", this);
-                                ld.DoubleClickEntryHandler = entryDoubleClick;
-                                ld.Show();
-                            }
-                            else
-                            {
-                                MessageBox.Show("Extracted into a new package.");
-                                var nwpf = new PackageEditorWindow();
-                                nwpf.LoadFile(d.FileName);
-                                nwpf.Show();
-                                nwpf.Activate();
-                            }
-                        }
-                    );
-                BusyText = "Exporting to new package";
-                IsBusy = true;
-
+                SharedPackageTools.ExtractEntryToNewPackage(exp, x => IsBusy = x, x => BusyText = x, GetEntryDoubleClickAction(), this);
             }
         }
 
@@ -599,7 +661,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
         {
             var classes = Pcc.Exports.Select(x => x.ClassName).NonNull().Distinct().ToList().OrderBy(p => p).ToList();
             var chosenClass = InputComboBoxDialog.GetValue(this, "Select a class to list all instances of.", "Class selector", classes, classes.FirstOrDefault());
-            if (chosenClass != null)
+            if (!string.IsNullOrWhiteSpace(chosenClass))
             {
                 var foundExports = Pcc.Exports.Where(x => x.ClassName == chosenClass).ToList();
                 // Have to make new EntryStringPair as Entry can be casted into String
@@ -997,7 +1059,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
 
         private void OpenFile()
         {
-            var d = new OpenFileDialog { Filter = GameFileFilters.OpenFileFilter };
+            var d = AppDirectories.GetOpenPackageDialog();
             if (d.ShowDialog() == true)
             {
 #if !DEBUG
@@ -1033,7 +1095,8 @@ namespace LegendaryExplorer.Tools.PackageEditor
                         MEGame.ME2 => GameFileFilters.ME3ME2SaveFileFilter,
                         MEGame.ME3 => GameFileFilters.ME3ME2SaveFileFilter,
                         _ => GameFileFilters.LESaveFileFilter
-                    }
+                    },
+                    CustomPlaces = AppDirectories.GameCustomPlaces,
                 };
                 if (dlg.ShowDialog() == true)
                 {
@@ -1384,6 +1447,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
 
                 BusyText = "Performing reference check...";
                 IsBusy = true;
+                var positionInBranch = selected.Parent.Sublinks.IndexOf(selected);
                 Task.Run(() =>
                 {
 
@@ -1403,7 +1467,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
                     if (entryWithReferences is not null)
                     {
                         MessageBoxResult messageBoxResult = MessageBox.Show(this,
-                            $"#{entryWithReferences.UIndex} {entryWithReferences.InstancedFullPath} is referenced by other entries! (Use the \"{FindReferencesMenuText}\" option in the context menu to see the references.)" +
+                            $"#{entryWithReferences.UIndex} {entryWithReferences.InstancedFullPath} is referenced by other entries! Use the \"{FindReferencesMenuText}\" option in the context menu to see the references. " +
                             "These references will be broken if you trash it! Are you sure you want to proceed?",
                             "Trash warning", MessageBoxButton.YesNo);
                         if (messageBoxResult != MessageBoxResult.Yes)
@@ -1411,9 +1475,21 @@ namespace LegendaryExplorer.Tools.PackageEditor
                             return;
                         }
                     }
-                    int parentEntry = selected.Entry.Parent?.UIndex ?? 0;
 
-                    if (!GoToNumber(parentEntry))
+                    int newSelection = selected.Entry.Parent?.UIndex ?? 0; // The parent
+                    if (positionInBranch > 0)
+                    {
+                        if (selected.Parent.Sublinks.Count > positionInBranch + 1) // Node has not been removed yet from the entry tree so we have to check +1
+                        {
+                            newSelection = selected.Parent.Sublinks[positionInBranch + 1].UIndex; // Go to the item that will be shifted into our position
+                        }
+                        else if (positionInBranch > 0) // go to the previous item
+                        {
+                            newSelection = selected.Parent.Sublinks[positionInBranch - 1].UIndex; // Go to the item that is was before our item
+                        }
+                    }
+
+                    if (!GoToNumber(newSelection))
                     {
                         AllTreeViewNodesX[0].IsProgramaticallySelecting = true;
                         SelectedItem = AllTreeViewNodesX[0];
@@ -1458,7 +1534,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
                             }
                             if (exp.HasComponentMap && exp.ComponentMap.Any(kvp => uIndexes.Contains(kvp.Value)))
                             {
-                                return pcc.GetEntry(exp.ComponentMap.Values().First(uIdx => uIndexes.Contains(uIdx)));
+                                return pcc.GetEntry(exp.ComponentMap.Values.First(uIdx => uIndexes.Contains(uIdx)));
                             }
 
                             //find stack references
@@ -1702,9 +1778,11 @@ namespace LegendaryExplorer.Tools.PackageEditor
                     case "BioSWF":
                     case "GFxMovieInfo":
                     case "BioTlkFile":
+                    case "SoundNodeWave":
                     case "BioSoundNodeWaveStreamingData":
                     case "FaceFXAsset":
                     case "WwiseBank":
+                    case "BrushComponent":
                         return true;
                 }
             }
@@ -1761,6 +1839,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
                             {
                                 MessageBox.Show("Error reading/saving SWF data:\n\n" + ex.FlattenException());
                             }
+
                             break;
                         }
                     case "BioTlkFile":
@@ -1778,29 +1857,40 @@ namespace LegendaryExplorer.Tools.PackageEditor
                                 exportingTalk.SaveToXML(d.FileName);
                                 MessageBox.Show("Done");
                             }
+
                             break;
                         }
-                    case "BioSoundNodeWaveStreamingData":
+                    case "SoundNodeWave":
                         {
+                            var ob = ObjectBinary.From<SoundNodeWave>(exp);
+                            if (ob.RawData == null || !ob.RawData.Any())
+                            {
+                                MessageBox.Show("This export has no sound data embedded in it.");
+                                return;
+                            }
+
                             var d = new CommonOpenFileDialog()
                             {
-                                Title = "Select output folder for ICBs",
+                                Title = "Select output folder for ICB/ISB",
                                 IsFolderPicker = true
                             };
+
                             if (d.ShowDialog() == CommonFileDialogResult.Ok)
                             {
+                                // todo: Change to ISACTBankPair?
+
                                 // ICB
                                 var outDir = d.FileName;
                                 // todo: Use objectbinary when we implement it
-                                var data = new MemoryStream(exp.GetBinaryData());
-                                var totalStreamingDataLen = data.ReadInt32();
+                                var data = new MemoryStream(ob.RawData);
+                                // var totalStreamingDataLen = data.ReadInt32();
                                 var isbOffset = data.ReadInt32();
 
                                 string icbName = null;
 
                                 // ICB
                                 var dataStartPos = data.Position; // RIFF start
-                                data.Skip(0x4); // get riff length
+                                var riffForDebug = data.ReadStringASCII(0x4); // get riff length
                                 var riffLen = data.ReadInt32() + 0x8; // include len and RIFF
                                 data.Skip(0x8); // Jump to start of unicode string
                                 var strLen = data.ReadInt32();
@@ -1812,11 +1902,51 @@ namespace LegendaryExplorer.Tools.PackageEditor
 
                                 // ISB
                                 data.Position = isbOffset;
-                                using FileStream fs2 = new FileStream(Path.Combine(outDir, Path.GetFileNameWithoutExtension(icbName) + ".isb"), FileMode.Create);
+
+                                var audioName =
+                                    exp.ObjectName.Instanced.Substring(exp.ObjectName.Instanced.IndexOf(":") +
+                                                                       1); // This is really weak 
+                                using FileStream fs2 = new FileStream(
+                                    Path.Combine(outDir,
+                                        $"{Path.GetFileNameWithoutExtension(icbName)}_{audioName}.isb"),
+                                    FileMode.Create);
                                 data.Copy(fs2, new byte[2048]);
 
                                 MessageBox.Show("Done");
                             }
+                        }
+                        break;
+                    case "BioSoundNodeWaveStreamingData":
+                        {
+                            var d = new CommonOpenFileDialog
+                            {
+                                Title = "Select output folder for ICB/Stripped ISB",
+                                IsFolderPicker = true
+                            };
+                            if (d.ShowDialog() == CommonFileDialogResult.Ok)
+                            {
+                                // ICB
+                                var outDir = d.FileName;
+
+                                var bsnwsd = ObjectBinary.From<BioSoundNodeWaveStreamingData>(exp);
+                                var icbBank = bsnwsd.BankPair.ICBBank;
+                                var icbName = icbBank.BankChunks.OfType<TitleBankChunk>().FirstOrDefault();
+
+                                using var fs =
+                                    new FileStream(
+                                        Path.Combine(outDir, Path.GetFileNameWithoutExtension(icbName.Value) + ".icb"),
+                                        FileMode.Create);
+                                bsnwsd.BankPair.ICBBank.Write(fs);
+                                // ISB
+                                using var fs2 =
+                                    new FileStream(
+                                        Path.Combine(outDir, Path.GetFileNameWithoutExtension(icbName.Value) + ".isb"),
+                                        FileMode.Create);
+                                bsnwsd.BankPair.ISBBank.Write(fs2);
+
+                                MessageBox.Show("Done");
+                            }
+
                             break;
                         }
                     case "FaceFXAsset":
@@ -1839,19 +1969,53 @@ namespace LegendaryExplorer.Tools.PackageEditor
                             break;
                         }
                     case "WwiseBank":
-                        var wdiag = new SaveFileDialog
                         {
-                            Title = "WwiseBank file",
-                            FileName = exp.FullPath + ".bnk",
-                            Filter = "*.bnk|*.bnk"
-                        };
-                        if (wdiag.ShowDialog() == true)
+                            var wdiag = new SaveFileDialog
+                            {
+                                Title = "WwiseBank file",
+                                FileName = exp.FullPath + ".bnk",
+                                Filter = "*.bnk|*.bnk"
+                            };
+                            if (wdiag.ShowDialog() == true)
+                            {
+                                var data = new MemoryStream(exp.GetBinaryData());
+                                if (exp.Game.IsGame3())
+                                {
+                                    data.Skip(0x10);
+                                }
+                                else if (exp.Game.IsGame2())
+                                {
+                                    data.Skip(0x18);
+                                }
+
+                                using FileStream fs = new FileStream(wdiag.FileName, FileMode.Create);
+                                data.CopyToEx(fs, (int)data.Length - 0x10);
+                                MessageBox.Show("Done");
+                            }
+                        }
+                        break;
+                    case "BrushComponent":
                         {
-                            var data = new MemoryStream(exp.GetBinaryData());
-                            data.Skip(0x10); // Maybe diff for non ME3/LE games. Is anyone ever going to export ME2...?
-                            using FileStream fs = new FileStream(wdiag.FileName, FileMode.Create);
-                            data.CopyToEx(fs, (int)data.Length - 0x10);
-                            MessageBox.Show("Done");
+                            var cachedConv = ObjectBinary.From<BrushComponent>(exp);
+                            if (cachedConv.CachedPhysBrushData == null ||
+                                cachedConv.CachedPhysBrushData.CachedConvexElements == null ||
+                                cachedConv.CachedPhysBrushData.CachedConvexElements.Length == 0)
+                            {
+                                MessageBox.Show("This BrushComponent doesn't have a cached convex hull");
+                                break;
+                            }
+
+                            var saveDiag = new SaveFileDialog
+                            {
+                                Title = "Cached Convex Hull Data",
+                                FileName = exp.InstancedFullPath + ".phys",
+                                Filter = "*.phys|*.phys"
+                            };
+                            if (saveDiag.ShowDialog() == true)
+                            {
+                                File.WriteAllBytes(saveDiag.FileName, cachedConv.CachedPhysBrushData.CachedConvexElements[0].ConvexElementData);
+                                MessageBox.Show("Done");
+                            }
                         }
                         break;
                 }
@@ -1874,7 +2038,8 @@ namespace LegendaryExplorer.Tools.PackageEditor
                                 {
                                     Title = "Replace SWF",
                                     FileName = exp.FullPath + ".swf",
-                                    Filter = $"*{extension};*.gfx|*{extension};*.gfx"
+                                    Filter = $"*{extension};*.gfx|*{extension};*.gfx",
+                                    CustomPlaces = AppDirectories.GameCustomPlaces
                                 };
                                 if (d.ShowDialog() == true)
                                 {
@@ -1924,7 +2089,8 @@ namespace LegendaryExplorer.Tools.PackageEditor
                             {
                                 Title = "Replace TLK from exported XML (ME1 Only)",
                                 FileName = exp.FullPath + ".xml",
-                                Filter = $"*{extension}|*{extension}"
+                                Filter = $"*{extension}|*{extension}",
+                                CustomPlaces = AppDirectories.GameCustomPlaces
                             };
                             if (d.ShowDialog() == true)
                             {
@@ -1936,53 +2102,75 @@ namespace LegendaryExplorer.Tools.PackageEditor
                         }
                     case "BioSoundNodeWaveStreamingData":
                         {
+
                             // Requires ICB and ISB
                             string extension = Path.GetExtension(".icb");
                             var d = new OpenFileDialog
                             {
-                                Title = "Select processed ICB from ISACT",
-                                Filter = $"*{extension}|*{extension}"
+                                Title = "Select the ICB file (ISB should be same name next to it)",
+                                Filter = $"ISACT Content Bank (*.icb)|*{extension}",
+                                CheckFileExists = true,
+                                CustomPlaces = AppDirectories.GameCustomPlaces
                             };
+                            if (d.ShowDialog() == false)
+                                return;
 
-                            var d2 = new OpenFileDialog
+                            var isbF = Path.Combine(Directory.GetParent(d.FileName).FullName, $"{Path.GetFileNameWithoutExtension(d.FileName)}.isb");
+                            var errorMsg = ISACTHelper.GenerateSoundNodeWaveStreamingDataCS(exp, d.FileName, isbF);
+                            if (errorMsg != null)
                             {
-                                Title = "Select stripped processed ICB from ISACT",
-                                Filter = $"Stripped ISB|*isb"
-                            };
-
-                            string embeddedICBf = null;
-                            string embeddedISBf = null;
-                            if (d.ShowDialog() == true && d2.ShowDialog() == true)
-                            {
-                                var baseName = Path.GetFileNameWithoutExtension(d.FileName);
-                                var basePath = Directory.GetParent(d.FileName).FullName;
-
-                                // Strip data from ISB
-                                //MemoryStream
-                                //MemoryStream outStr = new MemoryStream();
-                                //outStr.WriteStringASCII("RIFF");
-                                //outStr.WriteInt32(0); // Placeolder position
-
-                                //while ()
-
-                                //// Re-write RIFF size
-                                //outStr.Seek(0x4, SeekOrigin.Begin);
-                                //outStr.WriteInt32((int)outStr.Length);
-
-                                var bsnwsd = ObjectBinary.From<BioSoundNodeWaveStreamingData>(exp);
-                                bsnwsd.EmbeddedICB = File.ReadAllBytes(d.FileName);
-                                bsnwsd.EmbeddedISB = File.ReadAllBytes(d2.FileName);
-                                exp.WriteBinary(bsnwsd);
+                                MessageBox.Show(errorMsg);
                             }
                             break;
                         }
+                    case "SoundNodeWave":
+                        {
+                            // I don't think we should import this way. In release builds don't allow this
+#if !DEBUG
+                            MessageBox.Show("Not currently supported");
+                            return;
+#endif
+                            // Requires ICB and ISB
+                            string extension = Path.GetExtension(".icb");
+                            var d = new OpenFileDialog
+                            {
+                                Title = "Select stripped ICB",
+                                Filter = $"*{extension}|*{extension}",
+                                CustomPlaces = AppDirectories.GameCustomPlaces
+                            };
+                            if (d.ShowDialog() == false)
+                                return;
+
+                            extension = ".isb";
+                            var d2 = new OpenFileDialog
+                            {
+                                Title = "Select stripped ISB",
+                                Filter = $"*{extension}|*{extension}",
+                                CustomPlaces = AppDirectories.GameCustomPlaces
+                            };
+                            if (d2.ShowDialog() == false)
+                                return;
+
+                            MemoryStream ms = new MemoryStream();
+                            ms.WriteInt32(0);
+                            ms.Write(File.ReadAllBytes(d.FileName));
+                            ms.Seek(0, SeekOrigin.Begin);
+                            ms.WriteInt32((int)ms.Length /*- 4*/);
+                            ms.Seek(0, SeekOrigin.End);
+                            ms.Write(File.ReadAllBytes(d2.FileName));
+                            var snw = ObjectBinary.From<SoundNodeWave>(exp);
+                            snw.RawData = ms.ToArray();
+                            exp.WriteBinary(snw);
+                        }
+                        break;
                     case "FaceFXAsset":
                         {
                             string extension = Path.GetExtension(".fxa");
                             var d = new OpenFileDialog
                             {
                                 Title = "Select FaceFX Asset",
-                                Filter = $"*{extension}|*{extension}"
+                                Filter = $"*{extension}|*{extension}",
+                                CustomPlaces = AppDirectories.GameCustomPlaces
                             };
                             if (d.ShowDialog() == true)
                             {
@@ -1995,27 +2183,48 @@ namespace LegendaryExplorer.Tools.PackageEditor
                             break;
                         }
                     case "WwiseBank":
-                    {
-                        string extension = Path.GetExtension(".bnk");
-                        var wdiag = new OpenFileDialog
                         {
-                            Title = "Select WwiseBank file",
-                            Filter = $"*{extension}|*{extension}"
-                        };
-                        if (wdiag.ShowDialog() == true)
-                        {
-                            var length = new FileInfo(wdiag.FileName).Length;
-                            MemoryStream outStream = new MemoryStream();
-                            // Write Bulk Data header
-                            outStream.WriteInt32(0); // Local
-                            outStream.WriteInt32((int)length); // Compressed size
-                            outStream.WriteInt32((int)length); // Decompressed size
-                            outStream.WriteInt32(0); // Data offset - this is not external so this is not used
-                            outStream.Write(File.ReadAllBytes(wdiag.FileName));
-                            exp.WriteBinary(outStream.GetBuffer());
+                            string extension = Path.GetExtension(".bnk");
+                            var wdiag = new OpenFileDialog
+                            {
+                                Title = "Select WwiseBank file",
+                                Filter = $"*{extension}|*{extension}",
+                                CustomPlaces = AppDirectories.GameCustomPlaces
+                            };
+                            if (wdiag.ShowDialog() == true)
+                            {
+                                var length = new FileInfo(wdiag.FileName).Length;
+                                MemoryStream outStream = new MemoryStream();
+                                // Write Bulk Data header
+                                outStream.WriteInt32(0); // Local
+                                outStream.WriteInt32((int)length); // Compressed size
+                                outStream.WriteInt32((int)length); // Decompressed size
+                                outStream.WriteInt32(0); // Data offset - this is not external so this is not used
+                                outStream.Write(File.ReadAllBytes(wdiag.FileName));
+                                exp.WriteBinary(outStream.ToArray()); // Do not use buffer
+                            }
+                            break;
                         }
-                        break;
-                    }
+                    case "BrushComponent":
+                        {
+                            string extension = Path.GetExtension(".phys");
+                            var wdiag = new OpenFileDialog
+                            {
+                                Title = "Select LEX exported Phys file",
+                                Filter = $"*{extension}|*{extension}",
+                                CustomPlaces = AppDirectories.GameCustomPlaces
+                            };
+                            if (wdiag.ShowDialog() == true)
+                            {
+                                var brush = BrushComponent.Create();
+                                brush.CachedPhysBrushData.CachedConvexElements = new KCachedConvexDataElement[]
+                                {
+                                    new KCachedConvexDataElement() { ConvexElementData = File.ReadAllBytes(wdiag.FileName) }
+                                };
+                                exp.WriteBinary(brush);
+                            }
+                            break;
+                        }
                 }
             }
         }
@@ -2176,7 +2385,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
             }
 
             ReferenceCheckPackage rcp = new ReferenceCheckPackage();
-            EntryChecker.CheckReferences(rcp, Pcc, EntryChecker.NonLocalizedStringConverter);
+            EntryChecker.CheckReferences(rcp, Pcc, LECLocalizationShim.NonLocalizedStringConverter);
 
             if (rcp.GetSignificantIssues().Any())
             {
@@ -2467,7 +2676,8 @@ namespace LegendaryExplorer.Tools.PackageEditor
             OpenFileDialog d = new OpenFileDialog
             {
                 Filter = "*.bin|*.bin",
-                FileName = export.ObjectName.Instanced + ".bin"
+                FileName = export.ObjectName.Instanced + ".bin",
+                CustomPlaces = AppDirectories.GameCustomPlaces
             };
             if (d.ShowDialog() == true)
             {
@@ -2522,226 +2732,6 @@ namespace LegendaryExplorer.Tools.PackageEditor
 
         private bool PackageIsLoaded() => Pcc != null;
 
-        private void ComparePackages()
-        {
-            if (Pcc != null)
-            {
-                string extension = Path.GetExtension(Pcc.FilePath);
-                OpenFileDialog d = new OpenFileDialog { Filter = "*" + extension + "|*" + extension };
-                if (d.ShowDialog() == true)
-                {
-                    if (Pcc.FilePath == d.FileName)
-                    {
-                        MessageBox.Show("You selected the same file as the one already open.");
-                        return;
-                    }
-
-                    CompareToPackageWrapper(diskPath: d.FileName);
-                }
-            }
-        }
-
-        private void CompareToPackageWrapper(IMEPackage package = null, string diskPath = null, Stream packageStream = null)
-        {
-            Task.Run(() =>
-                    {
-                        BusyText = "Comparing packages...";
-                        IsBusy = true;
-                        try
-                        {
-                            if (package != null) return (object)Pcc.CompareToPackage(package);
-                            if (diskPath != null) return (object)Pcc.CompareToPackage(diskPath);
-                            if (packageStream != null) return (object)Pcc.CompareToPackage(packageStream);
-                            return "CompareToPackageWrapper() requires at least one parameter be set!";
-                        }
-                        catch (Exception e)
-                        {
-                            return e.Message;
-                        }
-                    }).ContinueWithOnUIThread(result =>
-                    {
-                        IsBusy = false;
-                        if (result.Result is string errorMessage)
-                        {
-                            MessageBox.Show(errorMessage, "Error comparing packages");
-                        }
-                        else if (result.Result is List<EntryStringPair> results)
-                        {
-                            if (Enumerable.Any(results))
-                            {
-                                ListDialog ld = new ListDialog(results, "Changed exports/imports/names between files",
-                                        "The following exports, imports, and names are different between the files.", this)
-                                { DoubleClickEntryHandler = entryDoubleClick };
-                                ld.Show();
-                            }
-                            else
-                            {
-                                MessageBox.Show("No changes between names/imports/exports were found between the files.", "Packages seem identical");
-                            }
-                        }
-                    });
-        }
-
-        private bool CanCompareToUnmodded() => PackageIsLoaded() && Pcc.Game != MEGame.UDK &&
-                                               !(Pcc.IsInBasegame() || Pcc.IsInOfficialDLC());
-
-        private void CompareUnmodded()
-        {
-            if (!Pcc.Game.IsLEGame() && !Pcc.Game.IsOTGame())
-            {
-                MessageBox.Show(this, "Can only compare packages from the Original Trilogy or Legendary Edition.", "Can't compare", MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
-
-            Task.Run(() =>
-            {
-                BusyText = "Finding unmodded candidates...";
-                IsBusy = true;
-                return GetUnmoddedCandidatesForPackage();
-            }).ContinueWithOnUIThread(foundCandidates =>
-           {
-               IsBusy = false;
-               if (!foundCandidates.Result.Any())
-               {
-                   MessageBox.Show(this, "Cannot find any candidates for this file!");
-                   return;
-               }
-
-               var choices = foundCandidates.Result.DiskFiles.ToList(); //make new list
-               choices.AddRange(foundCandidates.Result.SFARPackageStreams.Select(x => x.Key));
-
-               var choice = InputComboBoxDialog.GetValue(this, "Choose file to compare to:", "Unmodified file comparison", choices, choices.Last());
-               if (string.IsNullOrEmpty(choice))
-               {
-                   return;
-               }
-
-               if (foundCandidates.Result.DiskFiles.Contains(choice))
-               {
-                   CompareToPackageWrapper(diskPath: choice);
-               }
-               else if (foundCandidates.Result.SFARPackageStreams.TryGetValue(choice, out var packageStream))
-               {
-                   CompareToPackageWrapper(packageStream: packageStream);
-               }
-               else
-               {
-                   MessageBox.Show("Selected candidate not found in the lists! This is a bug", "OH NO");
-               }
-           });
-        }
-
-        internal UnmoddedCandidatesLookup GetUnmoddedCandidatesForPackage()
-        {
-            string lookupFilename = Path.GetFileName(Pcc.FilePath);
-            string dlcPath = MEDirectories.GetDLCPath(Pcc.Game);
-            string backupPath = ME3TweaksBackups.GetGameBackupPath(Pcc.Game);
-            var unmoddedCandidates = new UnmoddedCandidatesLookup();
-
-            // Lookup unmodded ON DISK files
-            List<string> unModdedFileLookup(string filename)
-            {
-                List<string> inGameCandidates = MEDirectories.OfficialDLC(Pcc.Game)
-                    .Select(dlcName => Path.Combine(dlcPath, dlcName))
-                    .Prepend(MEDirectories.GetCookedPath(Pcc.Game))
-                    .Where(Directory.Exists)
-                    .Select(cookedPath =>
-                        Directory.EnumerateFiles(cookedPath, "*", SearchOption.AllDirectories)
-                            .FirstOrDefault(path => Path.GetFileName(path) == filename))
-                    .NonNull().ToList();
-
-                if (backupPath != null)
-                {
-                    var backupDlcPath = MEDirectories.GetDLCPath(Pcc.Game, backupPath);
-                    inGameCandidates.AddRange(MEDirectories.OfficialDLC(Pcc.Game)
-                        .Select(dlcName => Path.Combine(backupDlcPath, dlcName))
-                        .Prepend(MEDirectories.GetCookedPath(Pcc.Game, backupPath))
-                        .Where(Directory.Exists)
-                        .Select(cookedPath =>
-                            Directory.EnumerateFiles(cookedPath, "*", SearchOption.AllDirectories)
-                                .FirstOrDefault(path => Path.GetFileName(path) == filename))
-                        .NonNull());
-
-                    if (Pcc.Game == MEGame.ME3)
-                    {
-                        // Check TESTPATCH
-
-                    }
-                }
-
-                return inGameCandidates;
-            }
-
-            unmoddedCandidates.DiskFiles.AddRange(unModdedFileLookup(lookupFilename));
-            if (unmoddedCandidates.DiskFiles.IsEmpty())
-            {
-                //Try to lookup using info in this file
-                var packages = Pcc.Exports.Where(x => x.ClassName == "Package" && x.idxLink == 0).ToList();
-                foreach (var p in packages)
-                {
-                    if ((p.PackageFlags & UnrealFlags.EPackageFlags.Cooked) != 0)
-                    {
-                        //try this one
-                        var objName = p.ObjectName;
-                        if (p.indexValue > 0) objName += $"_{p.indexValue - 1}"; //Some ME3 map files are indexed
-                        var cookedPackageName = objName + (Pcc.Game == MEGame.ME1 ? ".sfm" : ".pcc");
-                        unmoddedCandidates.DiskFiles.ReplaceAll(unModdedFileLookup(cookedPackageName)); //ME1 could be upk/u too I guess, but I think only sfm have packages cooked into them
-                        break;
-                    }
-                }
-            }
-
-            //if (filecandidates.Any())
-            //{
-            //    // Use em'
-            //    string filePath = InputComboBoxWPF.GetValue(this, "Choose file to compare to:",
-            //        "Unmodified file comparison", filecandidates, filecandidates.Last());
-
-            //    if (string.IsNullOrEmpty(filePath))
-            //    {
-            //        return null;
-            //    }
-
-            //    ComparePackage(filePath);
-            //    return true;
-            //}
-
-            if (Pcc.Game == MEGame.ME3 && backupPath != null)
-            {
-                var backupDlcPath = Path.Combine(backupPath, "BIOGame", "DLC");
-                if (Directory.Exists(dlcPath))
-                {
-                    var sfars = Directory.GetFiles(backupDlcPath, "*.sfar", SearchOption.AllDirectories).ToList();
-
-                    var testPatch = Path.Combine(backupPath, "BIOGame", "Patches", "PCConsole", "Patch_001.sfar");
-                    if (File.Exists(testPatch))
-                    {
-                        sfars.Add(testPatch);
-                    }
-
-                    foreach (var sfar in sfars)
-                    {
-                        DLCPackage dlc = new DLCPackage(sfar);
-                        // Todo: Port in M3's better SFAR lookup code
-                        var sfarIndex = dlc.FindFileEntry(Path.GetFileName(lookupFilename));
-                        if (sfarIndex >= 0)
-                        {
-                            var uiName = Path.GetFileName(sfar) == "Patch_001.sfar" ? "TestPatch" : Directory.GetParent(sfar).Parent.Name;
-                            unmoddedCandidates.SFARPackageStreams[$"{uiName} SFAR"] = dlc.DecompressEntry(sfarIndex);
-                        }
-                    }
-                }
-            }
-
-            return unmoddedCandidates;
-        }
-
-        internal class UnmoddedCandidatesLookup
-        {
-            public List<string> DiskFiles = new();
-            public Dictionary<string, Stream> SFARPackageStreams = new();
-            public bool Any() => Enumerable.Any(DiskFiles) || Enumerable.Any(SFARPackageStreams);
-        }
 
 
 
@@ -2791,6 +2781,43 @@ namespace LegendaryExplorer.Tools.PackageEditor
             RecentsController.InitRecentControl(Toolname, Recents_MenuItem, fileName => LoadFile(fileName));
         }
 
+        /// <summary>
+        /// Opens an existing package object, that may have been loaded from somewhere else.
+        /// </summary>
+        /// <param name="package"></param>
+        /// <param name="goToIndex"></param>
+        /// <param name="goToEntry"></param>
+        public void LoadPackage(IMEPackage package, int goToIndex = 0, string goToEntry = null)
+        {
+            // Todo: Maybe prompt if there are pending changes to the current package?
+            var packageFilePath = package.FilePath;
+            try
+            {
+                preloadPackage(Path.GetFileName(packageFilePath), 0); // Package is already loaded.
+                RegisterPackage(package);
+                _selectedItem = null; // We change the backing data so we don't fire off a tree event since it checks if Pcc is null.
+                if (goToIndex == 0 && !string.IsNullOrWhiteSpace(goToEntry))
+                {
+                    goToIndex = Pcc.FindEntry(goToEntry)?.UIndex ?? 0;
+                }
+
+                postloadPackage(packageFilePath, goToIndex);
+                if (File.Exists(packageFilePath))
+                {
+                    RecentsController.AddRecent(packageFilePath, false, Pcc?.Game);
+                    RecentsController.SaveRecentList(true);
+                }
+            }
+            catch (Exception e) when (!App.IsDebug)
+            {
+                StatusBar_LeftMostText.Text = "Failed to load " + Path.GetFileName(packageFilePath);
+                MessageBox.Show($"Error loading {Path.GetFileName(packageFilePath)}:\n{e.Message}");
+                IsBusy = false;
+                IsBusyTaskbar = false;
+                //throw e;
+            }
+        }
+
         public void LoadFile(string s, int goToIndex = 0, string goToEntry = null)
         {
             // Todo: Maybe prompt if there are pending changes to the current package?
@@ -2803,7 +2830,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
                 {
                     goToIndex = Pcc.FindEntry(goToEntry)?.UIndex ?? 0;
                 }
-                postloadPackage(Path.GetFileName(s), s, goToIndex);
+                postloadPackage(s, goToIndex);
 
                 RecentsController.AddRecent(s, false, Pcc?.Game);
                 RecentsController.SaveRecentList(true);
@@ -2821,14 +2848,12 @@ namespace LegendaryExplorer.Tools.PackageEditor
         /// <summary>
         /// Call once the MEPackage has been loaded and set
         /// </summary>
-        /// <param name="uiname"></param>
-        /// <param name="goToIndex"></param>
-        private void postloadPackage(string shortname, string fullname, int goToIndex = 0)
+        private void postloadPackage(string filePath, int goToIndex = 0)
         {
             RefreshView();
             InitStuff();
-            StatusBar_LeftMostText.Text = shortname;
-            Title = $"Package Editor - {fullname}";
+            StatusBar_LeftMostText.Text = GetStatusBarText();
+            Title = $"Package Editor - {filePath}";
             InterpreterTab_Interpreter.UnloadExport();
 
             QueuedGotoNumber = goToIndex;
@@ -3090,7 +3115,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
             return false;
         }
 
-        internal bool TryGetSelectedExport(out ExportEntry export)
+        internal bool TryGetSelectedExport([NotNullWhen(true)] out ExportEntry? export)
         {
             if (GetSelected(out int uIndex) && Pcc.IsUExport(uIndex))
             {
@@ -3102,7 +3127,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
             return false;
         }
 
-        private bool TryGetSelectedImport(out ImportEntry import)
+        private bool TryGetSelectedImport([NotNullWhen(true)] out ImportEntry? import)
         {
             if (GetSelected(out int uIndex) && Pcc.IsImport(uIndex))
             {
@@ -3531,6 +3556,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
 
         public bool GoToEntry(string instancedFullPath)
         {
+            if (instancedFullPath == null) return false;
             if (Pcc.FindEntry(instancedFullPath) is IEntry entry)
             {
                 CurrentView = CurrentViewMode.Tree;
@@ -3622,6 +3648,9 @@ namespace LegendaryExplorer.Tools.PackageEditor
             if (dropInfo.TargetItem is TreeViewEntry targetItem && dropInfo.Data is TreeViewEntry sourceItem &&
                 sourceItem.Parent != null)
             {
+
+                var dragInfo = dropInfo.DragInfo;
+                var sourceWindow = Window.GetWindow(dragInfo.VisualSource) as PackageEditorWindow;
                 if (targetItem.Game.IsLEGame() != sourceItem.Game.IsLEGame() &&
                     !App.IsDebug &&
                     sourceItem.Entry.Game != MEGame.UDK) // allow UDK -> OT and LE)
@@ -3650,7 +3679,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
                     return;
                 }
 
-                var portingOption = TreeMergeDialog.GetMergeType(this, sourceItem, targetItem, Pcc);
+                var portingOption = TreeMergeDialog.GetMergeType(sourceWindow, this, sourceItem, targetItem, Pcc.Game);
 
                 if (portingOption.PortingOptionChosen == EntryImporter.PortingOption.Cancel)
                 {
@@ -3700,14 +3729,13 @@ namespace LegendaryExplorer.Tools.PackageEditor
                 {
                     if (File.Exists(objectDBPath))
                     {
-
                         using FileStream fs = File.OpenRead(objectDBPath);
                         objectDB = ObjectInstanceDB.Deserialize(targetItem.Game, fs);
                     }
                     else
                     {
                         var result = MessageBox.Show("Port With Donors checkbox was selected, but no object database was found! Continue operation without donors?",
-                            "No object database", MessageBoxButton.YesNo);
+                            "No object database", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
                         if (result is not MessageBoxResult.Yes)
                         {
                             return;
@@ -3727,11 +3755,11 @@ namespace LegendaryExplorer.Tools.PackageEditor
                 {
                     IsCrossGame = sourceEntry.Game != targetItem.Game && sourceEntry.Game != MEGame.UDK,
                     TargetGameDonorDB = objectDB,
-                    Cache = objectDB != null ? new PackageCache() : null, // For donors to work you MUST provide a package cache otherwise it'll take ages
-                    // as LEX closes on dispose which we don't want
                     ImportExportDependencies = portingOption.PortingOptionChosen is EntryImporter.PortingOption.CloneAllDependencies
                         or EntryImporter.PortingOption.ReplaceSingularWithRelink,
-                    GenerateImportsForGlobalFiles = portingOption.PortGlobalsAsImports
+                    GenerateImportsForGlobalFiles = portingOption.PortGlobalsAsImports,
+                    PortImportsMemorySafe = portingOption.PortExportsMemorySafe,
+                    PortExportsAsImportsWhenPossible = portingOption.PortExportsAsImportsWhenPossible,
                 };
 
                 var relinkResults = EntryImporter.ImportAndRelinkEntries(portingOption.PortingOptionChosen, sourceEntry, Pcc,
@@ -3926,28 +3954,8 @@ namespace LegendaryExplorer.Tools.PackageEditor
             //    start = n + 1;
 
 
-            string searchTerm = Search_TextBox.Text.ToLower();
+            string searchTerm = Search_TextBox.Text.Trim();
 
-            /*if (CurrentView == View.Names)
-            {
-                for (int i = start; i < pcc.Names.Count; i++)
-                    if (Pcc.getNameEntry(i).ToLower().Contains(searchTerm))
-                    {
-                        listBox1.SelectedIndex = i;
-                        break;
-                    }
-            }
-            if (CurrentView == View.Imports)
-            {
-                IReadOnlyList<ImportEntry> imports = pcc.Imports;
-                for (int i = start; i < imports.Count; i++)
-                    if (imports[i].ObjectName.ToLower().Contains(searchTerm))
-                    {
-                        listBox1.SelectedIndex = i;
-                        break;
-                    }
-            }
-            */
             void LoopFunc(ref int integer, int count)
             {
                 if (reverseSearch)
@@ -3978,7 +3986,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
                     numSearched < Pcc.Names.Count;
                     LoopFunc(ref i, Pcc.NameCount), numSearched++)
                 {
-                    if (Pcc.Names[i].ToLower().Contains(searchTerm))
+                    if (Pcc.Names[i].Contains(searchTerm, StringComparison.InvariantCultureIgnoreCase))
                     {
                         LeftSide_ListView.SelectedIndex = i;
                         break;
@@ -3994,7 +4002,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
                     numSearched < Pcc.Imports.Count;
                     LoopFunc(ref i, Pcc.ImportCount), numSearched++)
                 {
-                    if (Pcc.Imports[i].ObjectName.Name.ToLower().Contains(searchTerm))
+                    if (Pcc.Imports[i].ObjectName.Name.Contains(searchTerm, StringComparison.InvariantCultureIgnoreCase))
                     {
                         LeftSide_ListView.SelectedIndex = i;
                         break;
@@ -4015,7 +4023,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
                     numSearched < Pcc.Exports.Count;
                     LoopFunc(ref i, Pcc.ExportCount), numSearched++)
                 {
-                    if (Pcc.Exports[i].ObjectName.Name.ToLower().Contains(searchTerm))
+                    if (Pcc.Exports[i].ObjectName.Name.Contains(searchTerm, StringComparison.InvariantCultureIgnoreCase))
                     {
                         LeftSide_ListView.SelectedIndex = i;
                         break;
@@ -4049,7 +4057,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
                         continue;
                     }
 
-                    if (node.Entry.ObjectName.Instanced.ToLower().Contains(searchTerm))
+                    if (node.Entry.ObjectName.Instanced.Contains(searchTerm, StringComparison.InvariantCultureIgnoreCase))
                     {
                         node.IsProgramaticallySelecting = true;
                         SelectedItem = node;
@@ -4161,7 +4169,7 @@ namespace LegendaryExplorer.Tools.PackageEditor
                     dialogueEditorWPF.Show();
                     break;
                 case "PathfindingEditor":
-                    var pathEditor = new PathfindingEditor.PathfindingEditorWindow(Pcc.FilePath);
+                    var pathEditor = new PathfindingEditor.PathfindingEditorWindow(Pcc);
                     pathEditor.Show();
                     break;
                 case "Meshplorer":
@@ -4357,35 +4365,33 @@ namespace LegendaryExplorer.Tools.PackageEditor
             }
         }
 
-
-
-
-
-
-
-
-
-        public void LoadFileFromStream(Stream packageStream, string associatedFilePath, int goToIndex = 0)
+        public void LoadFileFromStream(Stream packageStream, string associatedFilePath, int goToIndex = 0, string goToEntry = null)
         {
+            // Todo: Maybe prompt if there are pending changes to the current package?
             try
             {
                 preloadPackage(Path.GetFileName(associatedFilePath), packageStream.Length);
                 LoadMEPackage(packageStream, associatedFilePath);
-                postloadPackage(Path.GetFileName(associatedFilePath), associatedFilePath, goToIndex);
+                _selectedItem = null; // We change the backing data so we don't fire off a tree event since it checks if Pcc is null.
+                if (goToIndex == 0 && !string.IsNullOrWhiteSpace(goToEntry))
+                {
+                    goToIndex = Pcc.FindEntry(goToEntry)?.UIndex ?? 0;
+                }
+                postloadPackage(associatedFilePath, goToIndex);
+
+                // Loading from stream is not supported for saving or direct loading.
+                // RecentsController.AddRecent(s, false, Pcc?.Game);
+                // RecentsController.SaveRecentList(true);
             }
             catch (Exception e) when (!App.IsDebug)
             {
-                StatusBar_LeftMostText.Text = "Failed to load " + Path.GetFileName(associatedFilePath);
-                MessageBox.Show($"Error loading {Path.GetFileName(associatedFilePath)}:\n{e.Message}");
+                StatusBar_LeftMostText.Text = "Failed to load " + associatedFilePath;
+                MessageBox.Show($"Error loading {associatedFilePath}:\n{e.Message}");
                 IsBusy = false;
                 IsBusyTaskbar = false;
                 //throw e;
             }
         }
-
-
-
-
 
         public void PropogateRecentsChange(string propogationSource, IEnumerable<RecentsControl.RecentItem> newRecents)
         {

@@ -21,7 +21,7 @@ namespace LegendaryExplorerCore.Textures.Studio
     /// </summary>
     [AddINotifyPropertyChangedInterface]
     [DebuggerDisplay("TextureMapMemoryEntry {Children.Count} children, {Instances.Count} instances, TFC name {TFCName}")]
-    public class TextureMapMemoryEntry
+    public partial class TextureMapMemoryEntry
     {
         /// <summary>
         /// Parses a Texture object
@@ -139,7 +139,7 @@ namespace LegendaryExplorerCore.Textures.Studio
         public TextureMapMemoryEntry(IEntry iEntry)
         {
             IsTexture = iEntry.IsTexture();
-            ObjectName = iEntry.ObjectName;
+            ObjectName = iEntry.ObjectName.Instanced;
         }
 
         /// <summary>
@@ -306,6 +306,8 @@ namespace LegendaryExplorerCore.Textures.Studio
                 }
             }
 
+            UIndex = exportEntry.UIndex; // This is so texture can be located in package by tooling
+
             // This needs some optimization once it's working
             var t2d = new Texture2D(exportEntry);
             bool canCache = t2d.GetTopMip().storageType != StorageTypes.empty && crcCache != null;
@@ -325,6 +327,7 @@ namespace LegendaryExplorerCore.Textures.Studio
             catch (Exception)
             {
                 // CRC could not be calculated
+
             }
         }
 
@@ -343,7 +346,7 @@ namespace LegendaryExplorerCore.Textures.Studio
         public string RelativePackagePath { get; set; }
 
         /// <summary>
-        /// UIndex of the export for the package. This is only used in the vanilla precomputed map
+        /// UIndex of the export for the package
         /// </summary>
         public int UIndex { get; set; }
 
@@ -480,24 +483,24 @@ namespace LegendaryExplorerCore.Textures.Studio
                 var filename = Path.GetFileName(p);
                 progressDelegate?.Invoke($@"Scanning {filename}", numDone, packageFiles.Count);
 
-                if (cts.IsCancellationRequested) 
+                if (cts.IsCancellationRequested)
                     break;
                 //using var package = MEPackageHandler.OpenMEPackage(p);
-                using var package = MEPackageHandler.UnsafePartialLoad(p, x=> !x.IsDefaultObject && x.IsTexture());
+                using var package = MEPackageHandler.UnsafePartialLoad(p, x => !x.IsDefaultObject && x.IsTexture());
 
                 if (game != MEGame.Unknown && game != package.Game)
                 {
                     // This workspace has files from multiple games!
                     throw new Exception("A directory being scanned cannot have packages from different games in it");
                 }
-                
+
                 if (vanillaMap is null)
                 {
                     game = package.Game;
                     vanillaMap = MEMTextureMap.LoadTextureMap(game);
                 }
 
-                var textures = package.Exports.Where(x => !x.IsDefaultObject && x.IsTexture());
+                var textures = package.Exports.Where(x => x.IsDataLoaded());
                 foreach (var t in textures)
                 {
                     if (cts.IsCancellationRequested) break;
@@ -531,7 +534,7 @@ namespace LegendaryExplorerCore.Textures.Studio
                     {
                         // Some textures are not the same across the same entry!
                         // This will lead to weird engine behavior as memory is dumped and newly loaded data is different
-                        Debug.WriteLine(@"UNMATCHED CRCSSSSSSSSSSSSSSSSSSSSSSSSSSS");
+                        Debug.WriteLine($@"UNMATCHED CRCSs for texture {t.ObjectName}");
                         SetUnmatchedCRC(t, true);
                     }
                     else

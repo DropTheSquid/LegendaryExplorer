@@ -125,6 +125,20 @@ namespace LegendaryExplorer
 
             set.Add(new Tool
             {
+                name = "PSA Viewer",
+                type = typeof(PSAViewerWindow),
+                icon = Application.Current.FindResource("iconPlaceholder") as ImageSource,
+                open = () =>
+                {
+                    (new PSAViewerWindow()).Show();
+                },
+                tags = new List<string> { "utility", "toolsetdev", "animation" },
+                category = "Toolset Devs",
+                description = "PSA Viewer is a tool for viewing the contents of a PSA file."
+            });
+
+            set.Add(new Tool
+            {
                 name = "SFAR Explorer",
                 type = typeof(Tools.SFARExplorer.SFARExplorerWindow),
                 icon = Application.Current.FindResource("iconSFARExplorer") as ImageSource,
@@ -159,7 +173,7 @@ namespace LegendaryExplorer
                 tags = new List<string> { "utility", "animation", "gesture" },
                 category = "Cinematic Tools",
                 category2 = "Utilities",
-                description = "Animation Viewer allows you to preview any animation in Mass Effect 3"
+                description = "Animation Viewer allows you to preview any animation in Mass Effect 3 (OT only)."
             });
 
 #if DEBUG
@@ -171,7 +185,7 @@ namespace LegendaryExplorer
                 open = () =>
                 {
                     var gameStr = InputComboBoxWPF.GetValue(null, "Choose game you want to use Animation Viewer 2 with.", "Live Level Editor 2 game selector",
-                        new[] { "LE1" }, "LE1");
+                        new[] { "LE1", "LE2", /*"LE3"*/ }, "LE2");
 
                     if (Enum.TryParse(gameStr, out MEGame game))
                     {
@@ -190,7 +204,7 @@ namespace LegendaryExplorer
                 category2 = "Utilities",
                 description = "IN DEVELOPMENT: (LE ONLY) Animation Viewer 2 allows you to preview any animation in the Legendary Edition versions of the games."
             });
-
+#endif
             set.Add(new Tool
             {
                 name = "Class Hierarchy Viewer",
@@ -210,7 +224,6 @@ namespace LegendaryExplorer
                 category = "Utilities",
                 description = "Class Hierarchy Viewer shows you how classes and properties inherit from each other, and where some override."
             });
-#endif
             set.Add(new Tool
             {
                 name = "Live Level Editor",
@@ -260,7 +273,7 @@ namespace LegendaryExplorer
                 open = () =>
                 {
                     var gameStr = InputComboBoxWPF.GetValue(null, "Choose game you want to use Script Debugger with.", "Script Debugger game selector",
-                        new[] { "LE1", "LE2" }, "LE2");
+                        new[] { "LE1", "LE2", "LE3" }, "LE3");
 
                     if (Enum.TryParse(gameStr, out MEGame game))
                     {

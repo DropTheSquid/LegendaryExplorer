@@ -11,12 +11,11 @@ namespace LegendaryExplorer.GameInterop.InteropTargets
         public override MEGame Game => MEGame.LE1;
         public override bool CanExecuteConsoleCommands => true;
         public override bool CanUpdateTOC => false;
-        public override string InteropASIName => "LEXInteropLE1.asi";
         public override bool CanUseLLE => true;
 
         public override string InteropASIDownloadLink =>
-            "https://github.com/ME3Tweaks/LE1-ASI-Plugins/releases/tag/LE1LEXInterop-v4";
-        public override string InteropASIMD5 => "e2d6a5bcd6118a5e2c64a88a40cd7824";
+            "https://github.com/ME3Tweaks/LE1-ASI-Plugins/releases/tag/LE1LEXInterop-v7";
+        public override string InteropASIMD5 => "473f0076a3d8a45b4c5d3e4501fa1c2a";
         public override string BinkBypassMD5 { get; }
         public override string OriginalBinkMD5 => "1f00452ad61a944556399e2ad5292b35";
 

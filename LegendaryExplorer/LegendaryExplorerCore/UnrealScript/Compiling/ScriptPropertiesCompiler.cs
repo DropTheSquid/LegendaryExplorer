@@ -21,6 +21,7 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
         private bool ShouldStripTransients;
         private readonly PackageCache packageCache;
         private bool IsStructDefaults;
+        private Func<IMEPackage, string, IEntry> MissingObjectResolver;
 
         private ScriptPropertiesCompiler(IMEPackage pcc, PackageCache packageCache = null)
         {
@@ -52,27 +53,23 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
             return props;
         }
 
-        public static void CompileDefault__Object(DefaultPropertiesBlock defaultsAST, ExportEntry classExport, ref ExportEntry defaultsExport, PackageCache packageCache = null)
+        public static void CompileDefault__Object(DefaultPropertiesBlock defaultsAST, ExportEntry classExport, ref ExportEntry defaultsExport, PackageCache packageCache = null, string gameRootOverride = null, Func<IMEPackage, string, IEntry> missingObjectResolver = null)
         {
             IMEPackage pcc = classExport.FileRef;
             var defaultsExportObjectName = new NameReference($"Default__{classExport.ObjectNameString}", classExport.indexValue);
             if (defaultsExport is null)
             {
-                if (pcc.TryGetTrash(out defaultsExport))
-                {
-                    defaultsExport.Parent = classExport.Parent;
-                }
-                else
-                {
-                    defaultsExport = new ExportEntry(pcc, classExport.Parent, defaultsExportObjectName);
-                    pcc.AddExport(defaultsExport);
-                }
+                //do not reuse trash for new defaults export. This is to ensure the defaults ends up right after the new class in the tree view
+
+                defaultsExport = new ExportEntry(pcc, classExport.Parent, defaultsExportObjectName);
+                pcc.AddExport(defaultsExport);
             }
             var cls = (Class)defaultsAST.Outer;
 
             var compiler = new ScriptPropertiesCompiler(pcc, packageCache)
             {
-                Default__Export = defaultsExport
+                Default__Export = defaultsExport,
+                MissingObjectResolver = missingObjectResolver
             };
 
             defaultsExport.SuperClass = null;
@@ -92,7 +89,7 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
 
             compiler.Default__Archetype = defaultsExport.Archetype switch
             {
-                ImportEntry defaultArchetypeImport => EntryImporter.ResolveImport(defaultArchetypeImport, packageCache, null, "INT"),
+                ImportEntry defaultArchetypeImport => EntryImporter.ResolveImport(defaultArchetypeImport, packageCache, null, "INT", gameRootOverride: gameRootOverride),
                 ExportEntry defaultArchetypeExport => defaultArchetypeExport,
                 _ => null
             };
@@ -102,9 +99,23 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
             defaultsExport.WriteProperties(props);
         }
 
+        public static void CompilePropertiesForNormalObject(DefaultPropertiesBlock defaultsAST, ExportEntry export, PackageCache packageCache = null, string gameRootOverride = null)
+        {
+            IMEPackage pcc = export.FileRef;
+
+            var compiler = new ScriptPropertiesCompiler(pcc, packageCache)
+            {
+                Default__Export = export
+            };
+
+            var props = compiler.ConvertStatementsToPropertyCollection(defaultsAST.Statements, export, null);
+            
+            export.WriteProperties(props);
+        }
+
         private PropertyCollection ConvertStatementsToPropertyCollection(List<Statement> statements, ExportEntry export, Dictionary<NameReference, ExportEntry> subObjectDict)
         {
-            var existingSubObjects = export.GetChildren<ExportEntry>().ToList();
+            List<ExportEntry> existingSubObjects = subObjectDict is null ? null : export.GetChildren<ExportEntry>().ToList();
             var props = new PropertyCollection();
             var subObjectsToFinish = new List<(Subobject, ExportEntry, int)>();
             foreach (Statement statement in statements)
@@ -112,6 +123,10 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
                 switch (statement)
                 {
                     case Subobject subObj:
+                        if (subObjectDict is null)
+                        {
+                            throw new Exception("Subobjects not permitted!");
+                        }
                         var subObjName = NameReference.FromInstancedString(subObj.NameDeclaration.Name);
                         existingSubObjects.TryRemove(exp => exp.ObjectName == subObjName, out ExportEntry existingSubObject);
                         int netIndex = existingSubObject?.NetIndex ?? 0;
@@ -127,24 +142,27 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
                         throw new Exception($"Unexpected statement type: {statement.GetType().Name}");
                 }
             }
-            //Default__ objects and struct defaults serialize transients, but subobjects dont 
-            ShouldStripTransients = true;
-            foreach ((Subobject subobject, ExportEntry subExport, int netIndex) in subObjectsToFinish)
+            if (subObjectDict is not null)
             {
-                WriteSubObjectData(subobject, subExport, netIndex, subObjectDict);
-            }
+                //Default__ objects and struct defaults serialize transients, but subobjects dont 
+                ShouldStripTransients = true;
+                foreach ((Subobject subobject, ExportEntry subExport, int netIndex) in subObjectsToFinish)
+                {
+                    WriteSubObjectData(subobject, subExport, netIndex, subObjectDict);
+                }
 
-            if (existingSubObjects.Any())
-            {
-                EntryPruner.TrashEntriesAndDescendants(existingSubObjects);
+                if (existingSubObjects.Any())
+                {
+                    EntryPruner.TrashEntriesAndDescendants(existingSubObjects);
+                }
             }
             return props;
         }
 
-        private void CreateSubObject(Subobject subObject, ExportEntry parent, ref ExportEntry subExport)
+        private void CreateSubObject(Subobject subObject, ExportEntry parent, ref ExportEntry subExport, string gamePathOverride = null)
         {
             var objName = NameReference.FromInstancedString(subObject.NameDeclaration.Name);
-            IEntry classEntry = EntryImporter.EnsureClassIsInFile(Pcc, subObject.Class.Name, new RelinkerOptionsPackage());
+            IEntry classEntry = EntryImporter.EnsureClassIsInFile(Pcc, subObject.Class.Name, new RelinkerOptionsPackage(), gamePathOverride);
             if (subExport is null)
             {
                 if (Pcc.TryGetTrash(out subExport))
@@ -196,7 +214,7 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
                     var baseDefault = classDefaultObject switch
                     {
                         ExportEntry exp => exp,
-                        ImportEntry imp => EntryImporter.ResolveImport(imp, packageCache, null, "INT"),
+                        ImportEntry imp => EntryImporter.ResolveImport(imp, packageCache, null, "INT", gameRootOverride: gamePathOverride),
                         _ => null
                     };
                     if (baseDefault is not null)
@@ -248,16 +266,32 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
             }
             switch (type)
             {
-                case ClassType classType:
+                case ClassType:
                     prop = new ObjectProperty(literal is NoneLiteral ? null : CompilerUtils.ResolveClass((Class)((ClassType)((ObjectLiteral)literal).Class).ClassLimiter, Pcc), propName);
                     break;
                 case Class cls:
-                    IEntry entry = literal switch
+                    IEntry entry;
+                    switch (literal)
                     {
-                        NoneLiteral => null,
-                        SymbolReference {Node: Subobject subobject} => subObjectDict?[NameReference.FromInstancedString(subobject.NameDeclaration.Name)],
-                        _ => Pcc.FindEntry(((ObjectLiteral)literal).Name.Value)
-                    };
+                        case NoneLiteral:
+                            entry = null;
+                            break;
+                        case SymbolReference { Node: Subobject subobject }:
+                            entry = subObjectDict?[NameReference.FromInstancedString(subobject.NameDeclaration.Name)];
+                            break;
+                        case ObjectLiteral objectLiteral:
+                            if (objectLiteral.Class is ClassType { ClassLimiter: Class @class })
+                            {
+                                entry = CompilerUtils.ResolveClass(@class, Pcc);
+                            }
+                            else
+                            {
+                                entry = Pcc.FindEntry(objectLiteral.Name.Value) ?? MissingObjectResolver?.Invoke(Pcc, objectLiteral.Name.Value);
+                            }
+                            break;
+                        default:
+                            throw new Exception($"Unrecognized literal type: {literal.GetType().FullName}");
+                    }
 
                     prop = new ObjectProperty(entry, propName)
                     {

@@ -190,16 +190,23 @@ namespace LegendaryExplorer.Tools.PlotDatabase
         {
             if (NeedsSave)
             {
-                var dlg = MessageBox.Show("Changes have been made to the modding database. Save now?", "Plot Database", MessageBoxButton.YesNo);
-                if (dlg == MessageBoxResult.Yes)
+                //var dlg = MessageBox.Show("Changes have been made to the modding database. Save now?", "Plot Database", MessageBoxButton.YesNo);
+                //if (dlg == MessageBoxResult.Yes)
+                //{
+                //    NeedsSave = false;
+                //    CurrentGame = MEGame.LE3;
+                //    SaveModDB();
+                //    CurrentGame = MEGame.LE2;
+                //    SaveModDB();
+                //    CurrentGame = MEGame.LE1;
+                //    SaveModDB();
+                //}
+                //Above is bugged but saves database? Why?
+                var dlg = MessageBox.Show("Changes have been made to the modding database. Do you want to exit?", "Plot Database", MessageBoxButton.OKCancel);
+                if (dlg == MessageBoxResult.Cancel)
                 {
-                    NeedsSave = false;
-                    CurrentGame = MEGame.LE3;
-                    SaveModDB();
-                    CurrentGame = MEGame.LE2;
-                    SaveModDB();
-                    CurrentGame = MEGame.LE1;
-                    SaveModDB();
+                    e.Cancel = true;
+                    return;
                 }
             }
         }
@@ -1131,7 +1138,8 @@ namespace LegendaryExplorer.Tools.PlotDatabase
             OpenFileDialog oDlg = new OpenFileDialog
             {
                 Filter = "Excel Files (*.xlsx)|*.xlsx",
-                Title = "Import Excel table"
+                Title = "Import Excel table",
+                CustomPlaces = AppDirectories.GameCustomPlaces
             };
 
             if (oDlg.ShowDialog() != true)

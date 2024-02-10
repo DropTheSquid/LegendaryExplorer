@@ -14,6 +14,7 @@ using LegendaryExplorerCore.Packages;
 using LegendaryExplorerCore.Unreal;
 using Microsoft.Win32;
 using Microsoft.WindowsAPICodePack.Dialogs;
+using LegendaryExplorer.Misc;
 
 namespace LegendaryExplorer.Tools.SFARExplorer
 {
@@ -167,7 +168,9 @@ namespace LegendaryExplorer.Tools.SFARExplorer
         {
             var ofd = new OpenFileDialog()
             {
-                Filter = "SFAR files|*.sfar"
+                Title = "Select DLC SFAR",
+                Filter = "SFAR files|*.sfar",
+                CustomPlaces = AppDirectories.GameCustomPlaces
             };
 
             var result = ofd.ShowDialog();

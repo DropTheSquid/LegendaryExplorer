@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using LegendaryExplorerCore.Gammtek.Extensions;
 using LegendaryExplorerCore.Helpers;
 using LegendaryExplorerCore.Misc;
 using LegendaryExplorerCore.Packages;
-using LegendaryExplorerCore.Packages.CloningImportingAndRelinking;
 using LegendaryExplorerCore.Unreal;
 using LegendaryExplorerCore.Unreal.BinaryConverters;
 using LegendaryExplorerCore.UnrealScript.Analysis.Symbols;
@@ -19,7 +19,7 @@ using static LegendaryExplorerCore.Unreal.UnrealFlags;
 
 namespace LegendaryExplorerCore.UnrealScript.Compiling
 {
-    public class ByteCodeCompilerVisitor : BytecodeWriter, IASTVisitor
+    internal class ByteCodeCompilerVisitor : BytecodeWriter, IASTVisitor
     {
         private readonly UStruct Target;
         private IContainsByteCode CompilationUnit;
@@ -34,6 +34,8 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
         private SkipPlaceholder iteratorCallSkip;
 
         private readonly Dictionary<Label, List<JumpPlaceholder>> LabelJumps = new();
+
+        private Func<IMEPackage, string, IEntry> MissingObjectResolver;
 
         [Flags]
         private enum NestType
@@ -86,9 +88,12 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
             ContainingClass = containingClass;
         }
 
-        public static void Compile(Function func, UFunction target)
+        public static void Compile(Function func, UFunction target, Func<IMEPackage, string, IEntry> missingObjectResolver = null)
         {
-            var bytecodeCompiler = new ByteCodeCompilerVisitor(target);
+            var bytecodeCompiler = new ByteCodeCompilerVisitor(target)
+            {
+                MissingObjectResolver = missingObjectResolver
+            };
             bytecodeCompiler.Compile(func);
         }
 
@@ -190,9 +195,12 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
         }
 
 
-        public static void Compile(State state, UState target)
+        public static void Compile(State state, UState target, Func<IMEPackage, string, IEntry> missingObjectResolver = null)
         {
-            var bytecodeCompiler = new ByteCodeCompilerVisitor(target);
+            var bytecodeCompiler = new ByteCodeCompilerVisitor(target)
+            {
+                MissingObjectResolver = missingObjectResolver
+            };
             bytecodeCompiler.Compile(state);
         }
 
@@ -243,6 +251,28 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
             }
         }
 
+        public static void Compile(Class cls, UClass target, Func<IMEPackage, string, IEntry> missingObjectResolver = null)
+        {
+            var bytecodeCompiler = new ByteCodeCompilerVisitor(target)
+            {
+                MissingObjectResolver = missingObjectResolver
+            };
+            bytecodeCompiler.Compile(cls);
+        }
+
+        private void Compile(Class cls)
+        {
+            if (Target is not UClass)
+            {
+                throw new Exception("Cannot compile a replication block to a non-class");
+            }
+            CompilationUnit = cls;
+
+            Emit(cls.ReplicationBlock);
+            WriteOpCode(OpCodes.EndOfScript);
+            Target.ScriptBytecodeSize = GetMemLength();
+            Target.ScriptBytes = GetByteCode();
+        }
 
         public bool VisitNode(CodeBody node)
         {
@@ -533,18 +563,76 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
         public bool VisitNode(ExpressionOnlyStatement node)
         {
 
-            if (GetAffector(node.Value) is { RetValNeedsDestruction: true } func)
+            if (NeedsToEatReturnValue(node.Value, out IEntry returnProp))
             {
                 WriteOpCode(OpCodes.EatReturnValue);
-                WriteObjectRef(ResolveReturnValue(func));
+                WriteObjectRef(returnProp);
             }
             Emit(node.Value);
             return true;
         }
 
+        private bool NeedsToEatReturnValue(Expression expr, [NotNullWhen(true)] out IEntry returnProp)
+        {
+            while (expr is CompositeSymbolRef csr)
+            {
+                expr = csr.InnerSymbol;
+            }
+            if (expr is DynArraySort dynArrayOp)
+            {
+                expr = dynArrayOp.DynArrayExpression;
+                while (expr is CompositeSymbolRef csr)
+                {
+                    expr = csr.InnerSymbol;
+                }
+                if (GetAffector(expr) is Function func)
+                {
+                    if (func.RetValNeedsDestruction)
+                    {
+                        returnProp = Pcc.getEntryOrAddImport($"{ResolveReturnValue(func).InstancedFullPath}.ReturnValue", PropertyTypeName(((DynamicArrayType)func.ReturnType).ElementType));
+                        return true;
+                    }
+                    returnProp = null;
+                    return false;
+                }
+                if (expr is SymbolReference { Node: VariableDeclaration varDecl})
+                {
+                    if (varDecl.Flags.Has(EPropertyFlags.NeedCtorLink) || varDecl.VarType.Size(Game) > 64)
+                    {
+                        returnProp = Pcc.getEntryOrAddImport($"{ResolveProperty(varDecl).InstancedFullPath}.{varDecl.Name}", PropertyTypeName(((DynamicArrayType)varDecl.VarType).ElementType));
+                        return true;
+                    }
+                }
+                throw new Exception($"Line {CompilationUnit.Tokens.LineLookup.GetLineFromCharIndex(expr.StartPos)}: Cannot resolve property for dynamic array sort! Please report this error to LEX devs.");
+            }
+            else if (expr switch
+                {
+                    DelegateCall delegateCall => delegateCall.DefaultFunction,
+                    FunctionCall functionCall => (Function)functionCall.Function.Node,
+                    InOpReference inOpReference => inOpReference.Operator.Implementer,
+                    PreOpReference preOpReference => preOpReference.Operator.Implementer,
+                    _ => null
+                } is { RetValNeedsDestruction: true } func)
+            {
+                returnProp = ResolveReturnValue(func);
+                return true;
+            }
+            returnProp = null;
+            return false;
+        }
+
         public bool VisitNode(ReplicationStatement node)
         {
-            throw new NotImplementedException();
+            foreach (SymbolReference varRef in node.ReplicatedVariables)
+            {
+                if (varRef.Node is not VariableDeclaration varDecl)
+                {
+                    throw new Exception($"Line {CompilationUnit.Tokens.LineLookup.GetLineFromCharIndex(varRef.StartPos)}: '{varRef.Name}' was not resolved to a variable! Please report this error to LEX devs.");
+                }
+                varDecl.ReplicationOffset = Position;
+            }
+            Emit(node.Condition);
+            return true;
         }
 
         public bool VisitNode(ErrorStatement node)
@@ -888,7 +976,7 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
             }
             else
             {
-                if (node.IsClassContext || hasInnerContext)
+                if (node.IsClassContext || hasInnerContext || Game is MEGame.LE1)
                 {
                     skip.End();
                 }
@@ -931,7 +1019,7 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
                     WriteName(func.Name);
                     if (Game >= MEGame.ME3)
                     {
-                        WriteObjectRef(func.Flags.Has(EFunctionFlags.Delegate) ? ResolveFunction(func) : null);
+                        WriteObjectRef(func.Flags.Has(EFunctionFlags.Delegate) ? ResolveDelegateProperty(func) : null);
                     }
                     return true;
             }
@@ -1025,7 +1113,6 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
         {
             WriteOpCode(OpCodes.Conditional);
             Emit(node.Condition);
-            useInstanceDelegate = true;
             using (WriteSkipPlaceholder())
             {
                 Emit(node.TrueExpression);
@@ -1035,8 +1122,6 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
             {
                 Emit(node.FalseExpression);
             }
-
-            useInstanceDelegate = false;
 
             return true;
         }
@@ -1048,7 +1133,7 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
                 if (prim.Cast == ECast.ObjectToInterface)
                 {
                     WriteOpCode(OpCodes.InterfaceCast);
-                    WriteObjectRef(ResolveClass((Class)node.CastType));
+                    WriteObjectRef(CompilerUtils.ResolveClass((Class)node.CastType, Pcc));
                 }
                 else
                 {
@@ -1059,12 +1144,12 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
             else if (node.CastType is ClassType clsType)
             {
                 WriteOpCode(OpCodes.Metacast);
-                WriteObjectRef(ResolveClass((Class)clsType.ClassLimiter));
+                WriteObjectRef(CompilerUtils.ResolveClass((Class)clsType.ClassLimiter, Pcc));
             }
             else
             {
                 WriteOpCode(OpCodes.DynamicCast);
-                WriteObjectRef(ResolveClass((Class)node.CastType));
+                WriteObjectRef(CompilerUtils.ResolveClass((Class)node.CastType, Pcc));
             }
             Emit(node.CastTarget);
             return true;
@@ -1292,11 +1377,11 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
             WriteOpCode(OpCodes.ObjectConst);
             if (node.Class is ClassType clsType)
             {
-                WriteObjectRef(ResolveClass((Class)clsType.ClassLimiter));
+                WriteObjectRef(CompilerUtils.ResolveClass((Class)clsType.ClassLimiter, Pcc));
             }
             else
             {
-                IEntry entry = ResolveObject($"{ContainingClass.InstancedFullPath}.{node.Name.Value}") ?? ResolveObject(node.Name.Value);
+                IEntry entry = ResolveObject($"{ContainingClass.InstancedFullPath}.{node.Name.Value}") ?? ResolveObject(node.Name.Value) ?? MissingObjectResolver?.Invoke(Pcc, node.Name.Value);
                 if (entry is null)
                 {
                     throw new Exception($"Line {CompilationUnit.Tokens.LineLookup.GetLineFromCharIndex(node.StartPos)}: Could not find '{node.Name.Value}' in {Pcc.FilePath}!");
@@ -1332,7 +1417,23 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
 
         public bool VisitNode(NoneLiteral node)
         {
-            WriteOpCode(node.IsDelegateNone ? OpCodes.EmptyDelegate : OpCodes.NoObject);
+            if (node.IsDelegateNone)
+            {
+                if (useInstanceDelegate)
+                {
+                    WriteOpCode(OpCodes.EmptyDelegate);
+                }
+                else
+                {
+                    WriteOpCode(OpCodes.DelegateProperty);
+                    WriteName("None");
+                    WriteObjectRef(null);
+                }
+            }
+            else
+            {
+                WriteOpCode(OpCodes.NoObject);
+            }
             return true;
         }
 
@@ -1412,7 +1513,7 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
             }
             resolvedEntry = node switch
             {
-                Class cls => ResolveClass(cls),
+                Class cls => CompilerUtils.ResolveClass(cls, Pcc),
                 Struct strct => ResolveStruct(strct),
                 State state => ResolveState(state),
                 Function func => ResolveFunction(func),
@@ -1433,23 +1534,13 @@ namespace LegendaryExplorerCore.UnrealScript.Compiling
 
         private IEntry ResolveFunction(Function f) => Pcc.getEntryOrAddImport($"{ResolveSymbol(f.Outer).InstancedFullPath}.{f.Name}", "Function");
 
+        private IEntry ResolveDelegateProperty(Function f) => Pcc.getEntryOrAddImport($"{ResolveSymbol(f.Outer).InstancedFullPath}.__{f.Name}__Delegate", "DelegateProperty");
+
         private IEntry ResolveReturnValue(Function f) => f.ReturnType is null ? null : Pcc.getEntryOrAddImport($"{ResolveFunction(f).InstancedFullPath}.ReturnValue", PropertyTypeName(f.ReturnType));
 
         private IEntry ResolveState(State s) => Pcc.getEntryOrAddImport($"{ResolveSymbol(s.Outer).InstancedFullPath}.{s.Name}", "State");
 
-        private IEntry ResolveClass(Class c)
-        {
-            var rop = new RelinkerOptionsPackage { ImportExportDependencies = true };
-            var entry = EntryImporter.EnsureClassIsInFile(Pcc, c.Name, rop);
-            if (rop.RelinkReport.Any())
-            {
-                throw new Exception($"Unable to resolve class '{c.Name}'! There were relinker errors: {string.Join("\n\t", rop.RelinkReport.Select(pair => pair.Message))}");
-            }
-            return entry;
-        }
-
-        private IEntry ResolveObject(string instancedFullPath) => Pcc.Exports.FirstOrDefault(exp => exp.InstancedFullPath == instancedFullPath) ??
-                                                                  (IEntry)Pcc.Imports.FirstOrDefault(imp => imp.InstancedFullPath == instancedFullPath);
+        private IEntry ResolveObject(string instancedFullPath) => Pcc.FindEntry(instancedFullPath);
 
         public static string PropertyTypeName(VariableType type) =>
             type switch

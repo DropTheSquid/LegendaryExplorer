@@ -10,6 +10,7 @@ using LegendaryExplorer.Dialogs;
 using LegendaryExplorer.Misc;
 using LegendaryExplorer.SharedUI;
 using LegendaryExplorer.Tools.PackageEditor;
+using LegendaryExplorerCore.Gammtek.Extensions.Collections.Generic;
 using LegendaryExplorerCore.Gammtek.IO;
 using LegendaryExplorerCore.Helpers;
 using LegendaryExplorerCore.Misc;
@@ -49,6 +50,11 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
         private byte[] OriginalHeader;
 
         public ObservableCollectionExtended<object> AllEntriesList { get; } = new();
+        public ObservableCollectionExtended<object> AllClassesList { get; } = new();
+        /// <summary>
+        /// Functions can list other functions as superclass so you cannot only display a list of classes
+        /// </summary>
+        public ObservableCollectionExtended<object> AllSuperClassesList { get; } = new();
         public int CurrentObjectNameIndex { get; private set; }
 
         private HexBox Header_Hexbox;
@@ -85,7 +91,6 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
 
         public EntryMetadataExportLoader() : base("Metadata Editor")
         {
-            DataContext = this;
             LoadCommands();
             InitializeComponent();
         }
@@ -138,19 +143,84 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
             if (pcc is null)
             {
                 AllEntriesList.ClearEx();
+                AllClassesList.ClearEx();
                 return;
             }
             var allEntriesNew = new List<object>();
+            var allClassesNew = new List<object>();
             for (int i = pcc.Imports.Count - 1; i >= 0; i--)
             {
                 allEntriesNew.Add(pcc.Imports[i]);
+                if (pcc.Imports[i].IsClass)
+                {
+                    allClassesNew.Add(pcc.Imports[i]);
+                }
             }
             allEntriesNew.Add(ZeroUIndexClassEntry.Instance);
+            allClassesNew.Add(ZeroUIndexClassEntry.Instance);
             foreach (ExportEntry exp in pcc.Exports)
             {
                 allEntriesNew.Add(exp);
+                if (exp.IsClass)
+                {
+                    allClassesNew.Add(exp);
+                }
             }
             AllEntriesList.ReplaceAll(allEntriesNew);
+            AllClassesList.ReplaceAll(allClassesNew);
+        }
+
+        private void RefreshSuperclassOptions(ExportEntry export)
+        {
+            var allSuperclassesNew = new List<object>();
+            if (export != null && export.ClassName is "Class" or "State" or "Function") // Others cannot use SuperClass
+            {
+                var isClass = export.ClassName == "Class";
+                var isState = export.ClassName == "State";
+                var isFunc = export.ClassName == "Function";
+                
+                var pcc = export.FileRef;
+                for (int i = pcc.Imports.Count - 1; i >= 0; i--)
+                {
+                    if (pcc.Imports[i].IsClass && isClass)
+                    {
+                        allSuperclassesNew.Add(pcc.Imports[i]);
+                    }
+                    if (pcc.Imports[i].ClassName == "State" && isState)
+                    {
+                        allSuperclassesNew.Add(pcc.Imports[i]);
+                    }
+                    if (pcc.Imports[i].ClassName == "Function" && isFunc)
+                    {
+                        allSuperclassesNew.Add(pcc.Imports[i]);
+                    }
+                }
+
+                allSuperclassesNew.Add(ZeroUIndexClassEntry.Instance);
+                foreach (ExportEntry exp in pcc.Exports)
+                {
+                    if (exp.IsClass && isClass)
+                    {
+                        allSuperclassesNew.Add(exp);
+                    }
+
+                    if (exp.ClassName is "State" && isState)
+                    {
+                        allSuperclassesNew.Add(exp);
+                    }
+
+                    if (exp.ClassName is "Function" && isFunc)
+                    {
+                        allSuperclassesNew.Add(exp);
+                    }
+                }
+            }
+            else
+            {
+                allSuperclassesNew.Add(ZeroUIndexClassEntry.Instance);
+            }
+
+            AllSuperClassesList.ReplaceAll(allSuperclassesNew);
         }
 
         public override void PopOut()
@@ -213,7 +283,7 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
 
                 if (exportEntry.HasComponentMap)
                 {
-                    OrderedMultiValueDictionary<NameReference, int> componentMap = exportEntry.ComponentMap;
+                    var componentMap = exportEntry.ComponentMap;
                     string components = $"ComponentMap: 0x{40:X2} {componentMap.Count} items\n";
                     int pairOffset = 44;
                     foreach ((NameReference name, int uIndex) in componentMap)
@@ -265,7 +335,7 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
             OriginalHeader = header;
             headerByteProvider.ReplaceBytes(header);
             HexChanged = false;
-            Header_Hexbox.Refresh();
+            Header_Hexbox?.Refresh();
             OnPropertyChanged(nameof(ObjectIndexOffsetText));
             loadingNewData = false;
         }
@@ -287,6 +357,7 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
                     InfoTab_Class_ComboBox.SelectedItem = exportEntry.Class; //make positive
                 }
 
+                RefreshSuperclassOptions(exportEntry);
                 if (exportEntry.HasSuperClass)
                 {
                     InfoTab_Superclass_ComboBox.SelectedItem = exportEntry.SuperClass;
@@ -357,7 +428,7 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
             CurrentLoadedEntry = importEntry;
             OriginalHeader = CurrentLoadedEntry.GenerateHeader();
             headerByteProvider.ReplaceBytes(OriginalHeader);
-            Header_Hexbox.Refresh();
+            Header_Hexbox?.Refresh();
             HexChanged = false;
             OnPropertyChanged(nameof(ObjectIndexOffsetText));
             loadingNewData = false;
@@ -467,17 +538,22 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
             if (!loadingNewData && InfoTab_Class_ComboBox.SelectedIndex >= 0)
             {
                 var selectedClassIndex = InfoTab_Class_ComboBox.SelectedIndex;
-                var unrealIndex = selectedClassIndex - CurrentLoadedEntry.FileRef.ImportCount;
+                var unrealIndex = (AllClassesList[selectedClassIndex] as IEntry)?.UIndex ?? 0;
                 if (unrealIndex == CurrentLoadedEntry?.UIndex)
                 {
                     var exp = (ExportEntry)CurrentLoadedEntry;
-                    InfoTab_Class_ComboBox.SelectedIndex = exp.Class != null ? exp.Class.UIndex + CurrentLoadedEntry.FileRef.ImportCount : CurrentLoadedEntry.FileRef.ImportCount;
+                    var expClassUIndex = exp.Class?.UIndex ?? 0;
+                    loadingNewData = true;
+                    InfoTab_Class_ComboBox.SelectedIndex = expClassUIndex != 0
+                        ? AllClassesList.FindIndex(x => x is IEntry ie && ie.UIndex == expClassUIndex)
+                        : AllClassesList.IndexOf(ZeroUIndexClassEntry.Instance); // Set to 0
+                    loadingNewData = false;
                     MessageBox.Show("Cannot set class to self, this will cause infinite recursion in game.");
                     return;
                 }
 
                 headerByteProvider.WriteBytes(HEADER_OFFSET_EXP_IDXCLASS, BitConverter.GetBytes(unrealIndex));
-                Header_Hexbox.Refresh();
+                Header_Hexbox?.Refresh();
             }
         }
 
@@ -503,7 +579,7 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
                     return;
                 }
                 headerByteProvider.WriteBytes(CurrentLoadedEntry is ExportEntry ? HEADER_OFFSET_EXP_IDXLINK : HEADER_OFFSET_IMP_IDXLINK, BitConverter.GetBytes(unrealIndex));
-                Header_Hexbox.Refresh();
+                Header_Hexbox?.Refresh();
             }
         }
 
@@ -512,7 +588,7 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
             if (!loadingNewData && InfoTab_Superclass_ComboBox.SelectedIndex >= 0)
             {
                 var selectedClassIndex = InfoTab_Superclass_ComboBox.SelectedIndex;
-                var unrealIndex = selectedClassIndex - CurrentLoadedEntry.FileRef.ImportCount;
+                var unrealIndex = (AllClassesList[selectedClassIndex] as IEntry)?.UIndex ?? 0;
                 if (unrealIndex == CurrentLoadedEntry?.UIndex)
                 {
                     MessageBox.Show("Cannot set superclass to self, this will cause infinite recursion in game.");
@@ -520,17 +596,18 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
 
                     if (exp.HasSuperClass)
                     {
-                        InfoTab_Superclass_ComboBox.SelectedIndex = exp.SuperClass.UIndex + CurrentLoadedEntry.FileRef.ImportCount;
+                        var superclass = exp.SuperClass;
+                        InfoTab_Superclass_ComboBox.SelectedIndex = AllClassesList.FindIndex(x => x is IEntry ie && ie == superclass);
                     }
                     else
                     {
-                        InfoTab_Superclass_ComboBox.SelectedIndex = CurrentLoadedEntry.FileRef.ImportCount; //0
+                        InfoTab_Superclass_ComboBox.SelectedIndex = AllClassesList.IndexOf(ZeroUIndexClassEntry.Instance);
                     }
                     return;
                 }
 
                 headerByteProvider.WriteBytes(HEADER_OFFSET_EXP_IDXSUPERCLASS, BitConverter.GetBytes(unrealIndex));
-                Header_Hexbox.Refresh();
+                Header_Hexbox?.Refresh();
             }
         }
 
@@ -542,7 +619,7 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
                 if (selectedNameIndex >= 0)
                 {
                     headerByteProvider.WriteBytes(CurrentLoadedEntry is ExportEntry ? HEADER_OFFSET_EXP_IDXOBJECTNAME : HEADER_OFFSET_IMP_IDXOBJECTNAME, BitConverter.GetBytes(selectedNameIndex));
-                    Header_Hexbox.Refresh();
+                    Header_Hexbox?.Refresh();
                 }
             }
         }
@@ -554,7 +631,7 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
                 if (int.TryParse(InfoTab_ObjectnameIndex_TextBox.Text, out int x))
                 {
                     headerByteProvider.WriteBytes(CurrentLoadedEntry is ExportEntry ? HEADER_OFFSET_EXP_INDEXVALUE : HEADER_OFFSET_IMP_IDXOBJECTNAME + 4, BitConverter.GetBytes(x));
-                    Header_Hexbox.Refresh();
+                    Header_Hexbox?.Refresh();
                 }
             }
         }
@@ -582,7 +659,7 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
                 }
 
                 headerByteProvider.WriteBytes(HEADER_OFFSET_EXP_IDXARCHETYPE, BitConverter.GetBytes(unrealIndex));
-                Header_Hexbox.Refresh();
+                Header_Hexbox?.Refresh();
             }
         }
 
@@ -591,8 +668,15 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
             if (!loadingNewData && InfoTab_PackageFile_ComboBox.SelectedIndex >= 0)
             {
                 int selectedNameIndex = InfoTab_PackageFile_ComboBox.SelectedIndex;
+                if (selectedNameIndex == CurrentLoadedEntry.FileRef.findName("None"))
+                {
+                    MessageBox.Show("Cannot set Package File to 'None', this is not allowed by the game engine.");
+                    InfoTab_PackageFile_ComboBox.SelectedIndex = CurrentLoadedEntry.FileRef.findName((CurrentLoadedEntry as ImportEntry).PackageFile);
+                    return;
+                }
+
                 headerByteProvider.WriteBytes(HEADER_OFFSET_IMP_IDXPACKAGEFILE, BitConverter.GetBytes(selectedNameIndex));
-                Header_Hexbox.Refresh();
+                Header_Hexbox?.Refresh();
             }
         }
 
@@ -602,7 +686,7 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
             {
                 var selectedNameIndex = InfoTab_ImpClass_ComboBox.SelectedIndex;
                 headerByteProvider.WriteBytes(HEADER_OFFSET_IMP_IDXCLASSNAME, BitConverter.GetBytes(selectedNameIndex));
-                Header_Hexbox.Refresh();
+                Header_Hexbox?.Refresh();
             }
         }
 
@@ -685,7 +769,7 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
                 }
                 //Debug.WriteLine(newFlags);
                 headerByteProvider.WriteBytes(HEADER_OFFSET_EXP_OBJECTFLAGS, BitConverter.GetBytes((ulong)newFlags));
-                Header_Hexbox.Refresh();
+                Header_Hexbox?.Refresh();
             }
         }
 
@@ -708,7 +792,7 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
                 }
                 //Debug.WriteLine(newFlags);
                 headerByteProvider.WriteBytes(_exportFlagsOffset, BitConverter.GetBytes((uint)newFlags));
-                Header_Hexbox.Refresh();
+                Header_Hexbox?.Refresh();
             }
         }
 
@@ -797,10 +881,12 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
             _currentLoadedEntry = null;
         }
 
+
+
         /// <summary>
         /// This class is used when stuffing into the list. It makes "0" searchable by having the UIndex property.
         /// </summary>
-        private class ZeroUIndexClassEntry
+        internal class ZeroUIndexClassEntry
         {
             public static readonly ZeroUIndexClassEntry Instance = new();
 
