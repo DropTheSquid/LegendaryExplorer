@@ -1034,9 +1034,9 @@ namespace LegendaryExplorerCore.UnrealScript
             using var fileLib = new FileLib(targetPcc);
 
             var classASTs = new List<Class>();
+            var log = new MessageLog();
             foreach (LooseClass looseClass in looseClasses.SelectMany(lcp => lcp.Classes))
             {
-                var log = new MessageLog();
                 (ASTNode node, _) = CompileOutlineAST(looseClass.Source, "Class", log, targetPcc.Game);
                 if (node is not Class cls)
                 {
@@ -1071,7 +1071,6 @@ namespace LegendaryExplorerCore.UnrealScript
                 SymbolTable symbols = fileLib.ReadonlySymbolTable; //this sign can't stop me because I can't read!
                 foreach (LooseClass looseClass in looseClassPackage.Classes)
                 {
-                    MessageLog log = looseClass.Log;
                     Class cls = looseClass.ClassAST;
 
                     try
@@ -1108,13 +1107,12 @@ namespace LegendaryExplorerCore.UnrealScript
                 }
                 catch (Exception e)
                 {
-                    var log = new MessageLog();
                     log.LogError($"Exception while compiling '{uClass.Export.ObjectName}': {e}");
                     return log;
                 }
             }
 
-            return new MessageLog();
+            return log;
         }
 
         private static bool FindOrCreatePackagePath(IEnumerable<string> packagePath, IMEPackage targetPcc, PackageCache cache, out IEntry leafPackage, out MessageLog log)
