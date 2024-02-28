@@ -34,7 +34,7 @@ namespace LegendaryExplorerCore.Coalesced
 			get { return _properties.Keys; }
 		}
 
-		public string Name { get; set; }
+		public virtual string Name { get; set; }
 
 		public ICollection<CoalesceProperty> Values
 		{
