@@ -9,6 +9,7 @@ using System.Windows;
 using System.Linq;
 using System.Collections.Generic;
 using System.Numerics;
+using System;
 
 namespace LegendaryExplorer.Tools.PackageEditor.Experiments
 {
@@ -421,12 +422,14 @@ defaultproperties
             {
                 numRightVerts++;
             }
-            return numRightVerts >= 2;
+            // if any of the three vertices is on the right side of the mesh, count this triangle as being on the right side
+            return numRightVerts >= 1;
         }
 
         private static bool IsRightEyeVertex(StaticLODModel lod, int vertIndex)
         {
-            return GetVertex(lod, vertIndex).Y > 0;
+            // consider values very close to 0 as being 0 to avoid triangles that just barely cross onto the right side as being on the right side
+            return GetVertex(lod, vertIndex).Y > 0.0001;
         }
 
         private static int GetEyeMaterialIndex(PackageEditorWindow pew, SkeletalMesh meshBinary)
