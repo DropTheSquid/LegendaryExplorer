@@ -1420,6 +1420,11 @@ namespace LegendaryExplorer.UserControls.PackageEditorControls
             PackageEditorExperimentsSquid.MakeHeterochromiaMesh(GetPEWindow());
         }
 
+        //private void CompareMeshes_Click(object sender, RoutedEventArgs e)
+        //{
+        //    PackageEditorExperimentsSquid.CompareMeshes(GetPEWindow());
+        //}
+
         // EXPERIMENTS: OTHER PEOPLE ------------------------------------------------------------
         #region Other people's experiments
         private void ExportLevelToT3D_Click(object sender, RoutedEventArgs e)
