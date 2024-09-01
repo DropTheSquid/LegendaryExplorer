@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -344,19 +343,22 @@ namespace LegendaryExplorerCore.Unreal
                 bool stripTransients = parsingEntry is not {ClassName: "Class" or "ScriptStruct"};
 
                 MEGame structValueLookupGame = pcc.Game;
+                
+                // This should be done already...
+                //GlobalUnrealObjectInfo.EnsureLoaded(pcc.Game);
                 switch (pcc.Game)
                 {
-                    case MEGame.ME1 when parsingEntry != null && parsingEntry.FileRef.Platform == MEPackage.GamePlatform.PS3 && ME3UnrealObjectInfo.Structs.ContainsKey(structType):
-                    case MEGame.ME2 when parsingEntry != null && parsingEntry.FileRef.Platform == MEPackage.GamePlatform.PS3 && ME3UnrealObjectInfo.Structs.ContainsKey(structType):
+                    case MEGame.ME1 when parsingEntry != null && parsingEntry.FileRef.Platform == MEPackage.GamePlatform.PS3 && ME3UnrealObjectInfo.ObjectInfo.Structs.ContainsKey(structType):
+                    case MEGame.ME2 when parsingEntry != null && parsingEntry.FileRef.Platform == MEPackage.GamePlatform.PS3 && ME3UnrealObjectInfo.ObjectInfo.Structs.ContainsKey(structType):
                         structValueLookupGame = MEGame.ME3;
                         break;
-                    case MEGame.ME3 when ME3UnrealObjectInfo.Structs.ContainsKey(structType):
-                    case MEGame.UDK when UDKUnrealObjectInfo.Structs.ContainsKey(structType):
-                    case MEGame.ME2 when ME2UnrealObjectInfo.Structs.ContainsKey(structType):
-                    case MEGame.ME1 when ME1UnrealObjectInfo.Structs.ContainsKey(structType):
-                    case MEGame.LE3 when LE3UnrealObjectInfo.Structs.ContainsKey(structType):
-                    case MEGame.LE2 when LE2UnrealObjectInfo.Structs.ContainsKey(structType):
-                    case MEGame.LE1 when LE1UnrealObjectInfo.Structs.ContainsKey(structType):
+                    case MEGame.ME3 when ME3UnrealObjectInfo.ObjectInfo.Structs.ContainsKey(structType):
+                    case MEGame.UDK when UDKUnrealObjectInfo.ObjectInfo.Structs.ContainsKey(structType):
+                    case MEGame.ME2 when ME2UnrealObjectInfo.ObjectInfo.Structs.ContainsKey(structType):
+                    case MEGame.ME1 when ME1UnrealObjectInfo.ObjectInfo.Structs.ContainsKey(structType):
+                    case MEGame.LE3 when LE3UnrealObjectInfo.ObjectInfo.Structs.ContainsKey(structType):
+                    case MEGame.LE2 when LE2UnrealObjectInfo.ObjectInfo.Structs.ContainsKey(structType):
+                    case MEGame.LE1 when LE1UnrealObjectInfo.ObjectInfo.Structs.ContainsKey(structType):
                         break;
                     default:
                         Debug.WriteLine("Unknown struct type: " + structType);
@@ -716,7 +718,6 @@ namespace LegendaryExplorerCore.Unreal
         }
     }
 
-
     /// <summary>
     /// Base class for all the Unreal property types that go in <see cref="PropertyCollection"/>
     /// </summary>
@@ -778,7 +779,6 @@ namespace LegendaryExplorerCore.Unreal
             WriteTo(stream.Writer, pcc, valueOnly);
             return stream.Length;
         }
-
 
         /// <summary>
         /// Creates a deep copy of the property
@@ -877,7 +877,7 @@ namespace LegendaryExplorerCore.Unreal
         public StructProperty(string structType, PropertyCollection props, NameReference? name = null, bool isImmutable = false) : base(name)
         {
             StructType = structType;
-            Properties = props ?? new PropertyCollection();
+            Properties = props ?? [];
             IsImmutable = isImmutable;
         }
 
@@ -890,7 +890,7 @@ namespace LegendaryExplorerCore.Unreal
         public StructProperty(string structType, bool isImmutable, params Property[] props) : base(null)
         {
             StructType = structType;
-            Properties = new PropertyCollection();
+            Properties = [];
             IsImmutable = isImmutable;
             foreach (var prop in props)
             {
@@ -932,7 +932,7 @@ namespace LegendaryExplorerCore.Unreal
 
         ///<inheritdoc/>
         public override bool Equivalent(Property other) => other is StructProperty structProperty && base.Equivalent(structProperty) && structProperty.StructType.CaseInsensitiveEquals(StructType)
-                                                           && structProperty.Properties.Equivalent(Properties);
+                                                           && Properties.Equivalent(structProperty.Properties);
 
         /// <summary>
         /// Generates a StructProperty (with the specified name) from the specified Guid
@@ -1059,7 +1059,6 @@ namespace LegendaryExplorerCore.Unreal
             }
         }
 
-
         /// <summary>
         /// Creates a <see cref="FloatProperty"/>
         /// </summary>
@@ -1119,7 +1118,6 @@ namespace LegendaryExplorerCore.Unreal
 
         public event PropertyChangedEventHandler PropertyChanged;
     }
-
 
     /// <summary>
     /// Property containing a UIndex
@@ -1237,6 +1235,24 @@ namespace LegendaryExplorerCore.Unreal
         public override int GetHashCode()
         {
             return Value.GetHashCode();
+        }
+
+        /// <summary>
+        /// Creates a new object property from the given import, with no name. Only use in object arrays!
+        /// </summary>
+        /// <param name="entry"></param>
+        public static implicit operator ObjectProperty(ImportEntry entry)
+        {
+            return new ObjectProperty(entry.UIndex);
+        }
+
+        /// <summary>
+        /// Creates a new object property from the given export, with no name. Only use in object arrays!
+        /// </summary>
+        /// <param name="entry"></param>
+        public static implicit operator ObjectProperty(ExportEntry entry)
+        {
+            return new ObjectProperty(entry.UIndex);
         }
 
 #pragma warning disable
@@ -1589,7 +1605,6 @@ namespace LegendaryExplorerCore.Unreal
                 var eNameNumber = stream.ReadInt32();
                 Value = new NameReference(eName, eNameNumber);
             }
-
         }
 
         ///<inheritdoc/>
@@ -1698,7 +1713,7 @@ namespace LegendaryExplorerCore.Unreal
         /// <param name="name">The property name.</param>
         public ImmutableByteArrayProperty(NameReference name) : base(name)
         {
-            Bytes = Array.Empty<byte>();
+            Bytes = [];
         }
 
         internal ImmutableByteArrayProperty(long startOffset, int count, EndianReader stream, NameReference name) : base(name)
@@ -1740,7 +1755,7 @@ namespace LegendaryExplorerCore.Unreal
         /// <summary>
         /// Do not use with <see cref="ImmutableByteArrayProperty"/>! Returns an empty list
         /// </summary>
-        public override IReadOnlyList<Property> Properties => new List<Property>();
+        public override IReadOnlyList<Property> Properties => [];
 
         /// <summary>
         /// Number of bytes
@@ -1751,7 +1766,7 @@ namespace LegendaryExplorerCore.Unreal
         /// </summary>
         public override void Clear()
         {
-            Bytes = Array.Empty<byte>();
+            Bytes = [];
         }
         /// <summary>
         /// Do not use with <see cref="ImmutableByteArrayProperty"/>! No-op
@@ -1788,7 +1803,7 @@ namespace LegendaryExplorerCore.Unreal
         /// Creates an empty <see cref="ArrayProperty{T}"/>
         /// </summary>
         /// <param name="name">The property name.</param>
-        public ArrayProperty(NameReference name) : this(new List<T>(), name)
+        public ArrayProperty(NameReference name) : this([], name)
         {
         }
 
@@ -1802,7 +1817,7 @@ namespace LegendaryExplorerCore.Unreal
         }
 
         /// <summary>
-        /// 
+        /// Creates an <see cref="ArrayProperty<typeparamref name="T"/>"/> from a <see cref="List<typeparamref name="T"/>"/>
         /// </summary>
         /// <param name="values"></param>
         /// <param name="name">The property name.</param>
@@ -1862,7 +1877,7 @@ namespace LegendaryExplorerCore.Unreal
             {
                 for (int i = 0; i < Count; i++)
                 {
-                    if (!Values[i].Equivalent(arrayProperty))
+                    if (!Values[i].Equivalent(arrayProperty[i]))
                     {
                         return false;
                     }
@@ -2192,7 +2207,6 @@ namespace LegendaryExplorerCore.Unreal
         private byte[] raw;
         private readonly string TypeName;
 
-        ///
         internal UnknownProperty(EndianReader stream, int size, string typeName = null, NameReference? name = null) : base(name)
         {
             ValueOffset = (int)stream.Position;
@@ -2201,7 +2215,7 @@ namespace LegendaryExplorerCore.Unreal
 #if AZURE
             Assert.Fail("Encountered an unknownproperty!");
 #endif
-            LECLog.Warning($@"Initializing an UnknownProperty object! Position: 0x{stream.Position - size:X8}");
+            LECLog.Warning($"Initializing an UnknownProperty object! Position: 0x{stream.Position - size:X8}");
         }
 
         ///<inheritdoc/>

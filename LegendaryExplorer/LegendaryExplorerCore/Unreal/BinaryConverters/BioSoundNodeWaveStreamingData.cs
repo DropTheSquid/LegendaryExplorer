@@ -1,8 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using LegendaryExplorerCore.Sound.ISACT;
 
 namespace LegendaryExplorerCore.Unreal.BinaryConverters
@@ -45,7 +41,6 @@ namespace LegendaryExplorerCore.Unreal.BinaryConverters
                 sc.ms.JumpTo(endPos);
             }
         }
-
 
         public static BioSoundNodeWaveStreamingData Create()
         {

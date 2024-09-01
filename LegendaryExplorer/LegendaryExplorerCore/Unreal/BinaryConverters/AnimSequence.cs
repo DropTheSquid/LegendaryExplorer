@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
-using System.Text;
-using System.Threading.Tasks;
 using LegendaryExplorerCore.Gammtek;
 using LegendaryExplorerCore.Gammtek.Extensions;
 using LegendaryExplorerCore.Helpers;
@@ -255,7 +253,6 @@ namespace LegendaryExplorerCore.Unreal.BinaryConverters
                             }
                             case AnimationCompressionFormat.ACF_Fixed48NoW:
                             {
-
                                 const float scale = 32767.0f;
                                 const ushort shift = 32767;
                                 float x = (ms.ReadUInt16() - shift) / scale;
@@ -324,10 +321,11 @@ namespace LegendaryExplorerCore.Unreal.BinaryConverters
 
         private void CompressAnimationData(MEGame game, AnimationCompressionFormat newRotationCompression)
         {
-            if (RawAnimationData is null)
-            {
-                DecompressAnimationData();
-            }
+            /* SirCxyrtyx 8/12/24: Always decompress, do not use pre-existing RawAnimationData if from a upk.
+             * In same cases, the RawAnimationData is wrong for unknown reasons ¯\_(ツ)_/¯
+             * The compressed data should be regarded as the source of truth
+             */
+            DecompressAnimationData();
 
             keyEncoding = AnimationKeyFormat.AKF_ConstantKeyLerp;
             posCompression = AnimationCompressionFormat.ACF_None;
@@ -479,7 +477,6 @@ namespace LegendaryExplorerCore.Unreal.BinaryConverters
                                 break;
                             case AnimationCompressionFormat.ACF_Fixed48NoW:
                             {
-
                                 const float scale = 32767.0f;
                                 const ushort shift = 32767;
                                 ms.WriteUInt16((ushort)(rot.X * scale + shift).Clamp(0, ushort.MaxValue));
@@ -500,7 +497,6 @@ namespace LegendaryExplorerCore.Unreal.BinaryConverters
 
             CompressedAnimationData = ms.ToArray();
             compressedDataSource = game;
-
 
             void PadTo4()
             {

@@ -338,7 +338,6 @@ namespace LegendaryExplorerCore.UnrealScript.Parsing
             };
             Tokens.AddDefinitionLink(@class, name);
             return @class;
-            
         }
 
         private Const ParseConstant()
@@ -784,7 +783,6 @@ namespace LegendaryExplorerCore.UnrealScript.Parsing
                 func = TryParseFunction();
             }
 
-
             if (!ParseScopeSpan(true, out int bodyStart, out int bodyEnd, out List<ScriptToken> scopeTokens))
             {
                 throw ParseError("Malformed state body!", CurrentPosition);
@@ -1101,9 +1099,9 @@ namespace LegendaryExplorerCore.UnrealScript.Parsing
                 {
                     flags |= EPropertyFlags.RsxStorage;
                 }
-                else if (Matches(nameof(EPropertyFlags.UnkFlag1), EF.Specifier))
+                else if (Matches(nameof(EPropertyFlags.BioDynamicLoad), EF.Specifier))
                 {
-                    flags |= EPropertyFlags.UnkFlag1;
+                    flags |= EPropertyFlags.BioDynamicLoad;
                 }
                 else if (Matches("loadforcooking", EF.Specifier))
                 {

@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Runtime.CompilerServices;
-using LegendaryExplorerCore.Misc;
 using LegendaryExplorerCore.Packages;
 using LegendaryExplorerCore.Unreal.Collections;
 using UIndex = System.Int32;
@@ -41,8 +40,8 @@ namespace LegendaryExplorerCore.Unreal.BinaryConverters
         {
             foreach ((NameReference lang, BioTlkSet bioTlkSet) in TlkSets)
             {
-                Unsafe.AsRef(action).Invoke(ref bioTlkSet.Male, $"{lang}: Male");
-                Unsafe.AsRef(action).Invoke(ref bioTlkSet.Female, $"{lang}: Female");
+                Unsafe.AsRef(in action).Invoke(ref bioTlkSet.Male, $"{lang}: Male");
+                Unsafe.AsRef(in action).Invoke(ref bioTlkSet.Female, $"{lang}: Female");
             }
         }
 

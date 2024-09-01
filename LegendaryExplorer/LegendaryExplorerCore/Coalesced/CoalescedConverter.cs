@@ -12,6 +12,7 @@ using LegendaryExplorerCore.Coalesced.Xml;
 using LegendaryExplorerCore.Gammtek.Extensions.Collections.Generic;
 using LegendaryExplorerCore.Gammtek.IO;
 using LegendaryExplorerCore.Misc;
+using LegendaryExplorerCore.Packages;
 
 namespace LegendaryExplorerCore.Coalesced
 {
@@ -26,7 +27,7 @@ namespace LegendaryExplorerCore.Coalesced
         public static readonly int CoalescedMagicNumber = 1718448749;
 
         /// <summary>
-        /// The list of filenames supported by this compiler
+        /// The list of ini filenames supported by this compiler
         /// </summary>
         public static readonly SortedSet<string> ProperNames =
             new SortedSet<string>
@@ -35,29 +36,41 @@ namespace LegendaryExplorerCore.Coalesced
                 "BioCompat",
                 "BioCredits",
                 "BioDifficulty",
+                "BioEditor", // LE1
+                "BioEditorKeyBindings", // LE1
+                "BIoEditorUserSettings", // LE1
                 "BioEngine",
                 "BioGame",
                 "BioGuiResources", // PC Main Menu PC New Character
                 "BioInput",
                 "BioLightmass",
+                "BioParty", // LE1
+                "BioStringTypeMap", // LE1
                 "BioTest",
                 "BioUI",
                 "BioQA",
                 "BioWeapon",
-                "Core",
-                "Descriptions",
-                "EditorTips",
-                "Engine",
-                "GFxUI",
-                "IpDrv",
-                "Launch",
-                "OnlineSubsystemGamespy",
-                "Startup",
-                "Subtitles",
-                "UnrealEd",
-                "WinDrv",
-                "XWindow"
             };
+
+        /// <summary>
+        /// These files go in the Localizations folder and have a localized suffix. They aren't used except for some error handling messages
+        /// </summary>
+        public static readonly SortedSet<string> LocalizedFiles = new SortedSet<string>
+        {
+            "Core",
+            "Descriptions",
+            "EditorTips",
+            "Engine",
+            "GFxUI",
+            "IpDrv",
+            "Launch",
+            "OnlineSubsystemGamespy",
+            "Startup",
+            "Subtitles",
+            "UnrealEd",
+            "WinDrv",
+            "XWindow"
+        };
 
         public static readonly Dictionary<string, string> SpecialCharacters =
             new Dictionary<string, string>
@@ -79,7 +92,6 @@ namespace LegendaryExplorerCore.Coalesced
             coal.Deserialize(inputStream);
             XDocument xDoc;
             XElement rootElement;
-
 
             foreach (var file in coal.Files)
             {
@@ -245,7 +257,6 @@ namespace LegendaryExplorerCore.Coalesced
                 default:
                     throw new ArgumentOutOfRangeException();
             }
-
         }
 
         /// <summary>
@@ -656,13 +667,14 @@ namespace LegendaryExplorerCore.Coalesced
         /// Compiles a LE1/LE2 Coalesced file from a memory map.
         /// </summary>
         /// <param name="iniFileMap">Mapping of filenames to the ini object that represents the file contents.</param>
+        /// <param name="loc">Localization of this config file. This is important as it enables debug logger appErrorF messages.</param>
         /// <returns>Memorystream of the compiled Coalesced file</returns>
-        public static MemoryStream CompileLE1LE2FromMemory(Dictionary<string, DuplicatingIni> iniFileMap)
+        public static MemoryStream CompileLE1LE2FromMemory(Dictionary<string, DuplicatingIni> iniFileMap, MELocalization loc)
         {
             LECoalescedBundle cb = new LECoalescedBundle("");
             cb.Files.AddRange(iniFileMap);
             MemoryStream ms = new MemoryStream();
-            cb.WriteToStream(ms);
+            cb.WriteToStream(ms, loc);
             ms.Position = 0;
             return ms;
         }

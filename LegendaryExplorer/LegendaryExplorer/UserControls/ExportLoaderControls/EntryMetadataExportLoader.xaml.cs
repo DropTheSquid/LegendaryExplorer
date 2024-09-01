@@ -40,7 +40,6 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
 
         private const int HEADER_OFFSET_EXP_UNKNOWN1 = 0x1C;
 
-
         private const int HEADER_OFFSET_IMP_IDXCLASSNAME = 0x8;
         private const int HEADER_OFFSET_IMP_IDXLINK = 0x10;
         private const int HEADER_OFFSET_IMP_IDXOBJECTNAME = 0x14;
@@ -286,9 +285,9 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
                     var componentMap = exportEntry.ComponentMap;
                     string components = $"ComponentMap: 0x{40:X2} {componentMap.Count} items\n";
                     int pairOffset = 44;
-                    foreach ((NameReference name, int uIndex) in componentMap)
+                    foreach ((NameReference name, int index) in componentMap)
                     {
-                        components += $"0x{pairOffset:X2} {name.Instanced} => {uIndex} {exportEntry.FileRef.GetEntryString(uIndex + 1)}\n"; // +1 because it appears to be 0 based?
+                        components += $"0x{pairOffset:X2} {name.Instanced} => {index} {exportEntry.FileRef.GetEntryString(index + 1)}\n"; // +1 because it appears to be 0 based?
                         pairOffset += 12;
                     }
 
@@ -514,7 +513,6 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
             loadingNewData = false;
         }
 
-
         public override void UnloadExport()
         {
             UnloadEntry();
@@ -569,7 +567,6 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
         {
             if (!loadingNewData && InfoTab_PackageLink_ComboBox.SelectedIndex >= 0)
             {
-
                 var selectedImpExp = InfoTab_PackageLink_ComboBox.SelectedIndex;
                 var unrealIndex = selectedImpExp - CurrentLoadedEntry.FileRef.ImportCount; //get the actual UIndex
                 if (unrealIndex == CurrentLoadedEntry?.UIndex)
@@ -880,8 +877,6 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
             AllEntriesList.Clear();
             _currentLoadedEntry = null;
         }
-
-
 
         /// <summary>
         /// This class is used when stuffing into the list. It makes "0" searchable by having the UIndex property.

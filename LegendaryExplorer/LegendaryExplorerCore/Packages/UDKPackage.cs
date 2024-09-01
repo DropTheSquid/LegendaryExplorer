@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using LegendaryExplorerCore.Gammtek.IO;
@@ -10,7 +9,6 @@ using LegendaryExplorerCore.Misc;
 using LegendaryExplorerCore.TLK.ME1;
 using LegendaryExplorerCore.Unreal;
 using LegendaryExplorerCore.Unreal.Classes;
-using Newtonsoft.Json.Linq;
 using static LegendaryExplorerCore.Unreal.UnrealFlags;
 
 namespace LegendaryExplorerCore.Packages
@@ -23,7 +21,6 @@ namespace LegendaryExplorerCore.Packages
         public const int UDKUnrealVersion2010_09 = 765; 
         public const int UDKLicenseeVersion = 0; // 2015
 
-
         public MEGame Game => MEGame.UDK;
         public MEPackage.GamePlatform Platform => MEPackage.GamePlatform.PC;
         public Endian Endian => Endian.Native; //we do not support big endian UDK packages
@@ -33,7 +30,6 @@ namespace LegendaryExplorerCore.Packages
         /// Custom user-defined metadata to associate with this package object. This data has no effect on saving or loading, it is only for library user convenience.
         /// </summary>
         public Dictionary<string, object> CustomMetadata { get; set; } = new(0);
-
 
         /// <summary>
         /// This property is never used as UDK packages do not save LECLData
@@ -101,7 +97,6 @@ namespace LegendaryExplorerCore.Packages
         private static bool _isStreamLoaderRegistered;
         internal static Func<Stream, string, UDKPackage> RegisterStreamLoader()
         {
-
             if (_isStreamLoaderRegistered)
             {
                 throw new Exception(nameof(UDKPackage) + " streamloader can only be initialized once");
@@ -111,9 +106,7 @@ namespace LegendaryExplorerCore.Packages
             return (s, associatedFilePath) => new UDKPackage(s, associatedFilePath);
         }
 
-
         public static Action<UDKPackage, string, bool, object> RegisterSaver() => saveByReconstructing;
-
 
         /// <summary>
         ///     UDKPackage class constructor. It also load namelist, importlist and exportinfo (not exportdata) from udk file
@@ -256,7 +249,6 @@ namespace LegendaryExplorerCore.Packages
                     datastream.WriteToFile(path ?? udkPackage.FilePath);
                 }
             }
-
 
             if (!isSaveAs)
             {
@@ -424,7 +416,6 @@ namespace LegendaryExplorerCore.Packages
 
             ms.WriteInt32(engineVersion);
             ms.WriteInt32(cookedContentVersion);
-
 
             ms.WriteInt32(0);//CompressiontType.None
             ms.WriteInt32(0);//numChunks
