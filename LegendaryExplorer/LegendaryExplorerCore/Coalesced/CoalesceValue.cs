@@ -36,6 +36,8 @@ namespace LegendaryExplorerCore.Coalesced
             ValueType = GetValueType(valueType);
         }
 
+        public string Comment { get; set; }
+
         public static int GetValueType(CoalesceParseAction valueType)
         {
             switch (valueType)
