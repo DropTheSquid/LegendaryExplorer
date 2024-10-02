@@ -27,7 +27,7 @@ namespace LegendaryExplorerCore.Misc.ME3Tweaks
         }
 
         /// <summary>
-        /// Fetches the ME3Tweaks Mod Manager executable location, if it is exists. The value returned is the last instance run by the user.
+        /// Fetches the ME3Tweaks Mod Manager executable location, if it exists. The value returned is the last instance run by the user.
         /// </summary>
         /// <returns>Path to last run session executable if found; null otherwise</returns>
         public static string GetModManagerExecutableLocation()
@@ -75,6 +75,13 @@ namespace LegendaryExplorerCore.Misc.ME3Tweaks
         /// <returns>True if request was made, false otherwise</returns>
         public static bool RequestASIInstallation(MEGame game, int ASIid, int version = 0)
         {
+            if (GetModManagerBuildNumber() >= 134)
+            {
+                // Mod Manager 9+
+                return InternalRequestModManagerTask($"--installasi {ASIid} --game {game} --asiversion {version}");
+            }
+
+            // Mod Manager 8
             return InternalRequestModManagerTask($"--installasi {ASIid} --game {game}");
         }
 

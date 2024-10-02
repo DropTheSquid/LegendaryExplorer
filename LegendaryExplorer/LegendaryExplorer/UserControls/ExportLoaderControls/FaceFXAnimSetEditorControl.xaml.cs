@@ -206,7 +206,6 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
 
         #endregion
 
-
         private void LoadFaceFXAnimset()
         {
             Lines.Clear();
@@ -230,7 +229,6 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
                 {
                     // Cut off the start of the string
                     idStr = idStr.Substring(voPos + 3);
-
 
                     idStr = idStr.TrimEnd('M', 'F').TrimEnd('_'); // Hack
                 }
@@ -428,6 +426,7 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
                 lineEntry.Line.NameIndex = FaceFX.Names.FindOrAdd(sourceNames[lineEntry.Line.NameIndex]);
                 if (FaceFX.Binary is FaceFXAnimSet animSet) animSet.FixNodeTable();
                 lineEntry.Line.AnimationNames = lineEntry.Line.AnimationNames.Select(idx => FaceFX.Names.FindOrAdd(sourceNames[idx])).ToList();
+                lineEntry.Line.Index = FaceFX.Lines.Count;
                 FaceFX.Lines.Add(lineEntry.Line);
 
                 if (int.TryParse(lineEntry.Line.ID, out int tlkID))
@@ -752,7 +751,8 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
         private void CloneLine_Click(object sender, RoutedEventArgs e)
         {
             // HenBagle: We don't need to do anything with names here because we're cloning within the same file
-            FaceFXLineEntry newEntry = new FaceFXLineEntry(SelectedLine.Clone());
+            var newEntry = new FaceFXLineEntry(SelectedLine.Clone());
+            newEntry.Line.Index = FaceFX.Lines.Count;
             FaceFX.Lines.Add(newEntry.Line);
 
             if (int.TryParse(newEntry.Line.ID, out int tlkID))
@@ -907,7 +907,7 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
             UpdateAnimListBox();
         }
 
-        private struct LineSection
+        public struct LineSection
         {
             //don't alter capitalization of these fields, since that will break deserialization.
             public float span;
@@ -1193,7 +1193,6 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
                 graph.SelectedCurve = SelectedAnimation.ToCurve(SaveChanges);
                 graph.Paint(true);
                 SaveChanges();
-
             }
             catch (Exception exp)
             {
@@ -1202,7 +1201,6 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
                 MessageBox.Show($"{exp.FlattenException()}", "Error");
 #endif
             }
-
         }
 
         public interface IFaceFXBinary
@@ -1334,7 +1332,6 @@ namespace LegendaryExplorer.UserControls.ExportLoaderControls
                 default:
                     return;
             }*/
-
 
         }
 

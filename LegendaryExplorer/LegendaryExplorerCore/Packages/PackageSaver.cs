@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using LegendaryExplorerCore.GameFilesystem;
 using LegendaryExplorerCore.Helpers;
 using LegendaryExplorerCore.Memory;
-using LegendaryExplorerCore.Unreal.Classes;
 using Newtonsoft.Json;
 
 namespace LegendaryExplorerCore.Packages
@@ -81,7 +80,6 @@ namespace LegendaryExplorerCore.Packages
                     throw new ArgumentOutOfRangeException(nameof(package));
             }
         }
-
 
         /// <summary>
         /// Saves the package to disk on a different thread

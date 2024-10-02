@@ -238,13 +238,13 @@ namespace LegendaryExplorerCore.Unreal.BinaryConverters
             if (className == baseClass1 || className == baseClass2) return true;
             var classes = game switch
             {
-                MEGame.ME1 => ME1UnrealObjectInfo.Classes,
-                MEGame.ME2 => ME2UnrealObjectInfo.Classes,
-                MEGame.ME3 => ME3UnrealObjectInfo.Classes,
-                MEGame.UDK => ME3UnrealObjectInfo.Classes,
-                MEGame.LE1 => LE1UnrealObjectInfo.Classes,
-                MEGame.LE2 => LE2UnrealObjectInfo.Classes,
-                MEGame.LE3 => LE3UnrealObjectInfo.Classes,
+                MEGame.ME1 => ME1UnrealObjectInfo.ObjectInfo.Classes,
+                MEGame.ME2 => ME2UnrealObjectInfo.ObjectInfo.Classes,
+                MEGame.ME3 => ME3UnrealObjectInfo.ObjectInfo.Classes,
+                MEGame.UDK => ME3UnrealObjectInfo.ObjectInfo.Classes,
+                MEGame.LE1 => LE1UnrealObjectInfo.ObjectInfo.Classes,
+                MEGame.LE2 => LE2UnrealObjectInfo.ObjectInfo.Classes,
+                MEGame.LE3 => LE3UnrealObjectInfo.ObjectInfo.Classes,
                 _ => throw new ArgumentOutOfRangeException(nameof(game), game, null)
             };
             while (true)
@@ -518,7 +518,7 @@ namespace LegendaryExplorerCore.Unreal.BinaryConverters
                 ref KeyValuePair<int, TValue> kvp = ref refEnumerator.CurrentRef;
                 int key = kvp.Key;
                 int originalValue = key;
-                Unsafe.AsRef(action).Invoke(ref key, $"{name}[{i}]");
+                Unsafe.AsRef(in action).Invoke(ref key, $"{name}[{i}]");
                 if (key != originalValue)
                 {
                     isUpdated = true;
@@ -540,7 +540,7 @@ namespace LegendaryExplorerCore.Unreal.BinaryConverters
                 ref var kvp = ref refEnumerator.CurrentRef;
                 int value = kvp.Value;
                 int originalValue = value;
-                Unsafe.AsRef(action).Invoke(ref value, $"{name}[{i}]");
+                Unsafe.AsRef(in action).Invoke(ref value, $"{name}[{i}]");
                 if (value != originalValue)
                 {
                     kvp = new (kvp.Key, value);
@@ -554,7 +554,7 @@ namespace LegendaryExplorerCore.Unreal.BinaryConverters
         {
             for (int i = 0; i < span.Length; i++)
             {
-                Unsafe.AsRef(action).Invoke(ref span[i], $"{name}[{i}]");
+                Unsafe.AsRef(in action).Invoke(ref span[i], $"{name}[{i}]");
             }
         }
         #endregion

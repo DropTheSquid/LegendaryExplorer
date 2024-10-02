@@ -1,10 +1,7 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
 using LegendaryExplorerCore.DebugTools;
 using LegendaryExplorerCore.GameFilesystem;
 
@@ -13,7 +10,6 @@ namespace LegendaryExplorerCore.Unreal.PhysX
     internal static class PhysXDllLoader
     {
         internal const string PHYSXCOOKING64_DLL = "PhysXCooking64.dll";
-
 
         private static bool cookingDllLoaded;
 

@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using LegendaryExplorerCore.Helpers;
-using LegendaryExplorerCore.Misc;
 using LegendaryExplorerCore.Packages;
 using LegendaryExplorerCore.Shaders;
 using LegendaryExplorerCore.Unreal.Collections;
@@ -89,7 +88,6 @@ namespace LegendaryExplorerCore.Unreal.BinaryConverters
             int i = 0;
             foreach ((_, Shader shader) in Shaders)
             {
-
                 names.Add(shader.ShaderType, $"Shaders[{i}].ShaderType");
                 if (shader.VertexFactoryType.HasValue)
                 {
@@ -128,7 +126,6 @@ namespace LegendaryExplorerCore.Unreal.BinaryConverters
         public byte[] unkBytesPreName; //only exists in some Shaders with a FVertexFactoryParameterRef
         public NameReference? VertexFactoryType; //only exists in Shaders with a FVertexFactoryParameterRef
         public byte[] unkBytes;
-
 
         private string dissassembly;
         private ShaderInfo info;

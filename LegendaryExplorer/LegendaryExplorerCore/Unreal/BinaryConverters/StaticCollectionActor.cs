@@ -4,7 +4,6 @@ using System.Numerics;
 using LegendaryExplorerCore.Gammtek.Extensions.Collections.Generic;
 using LegendaryExplorerCore.Helpers;
 using LegendaryExplorerCore.Packages;
-using LegendaryExplorerCore.Unreal.ObjectInfo;
 using UIndex = System.Int32;
 
 namespace LegendaryExplorerCore.Unreal.BinaryConverters
@@ -57,7 +56,6 @@ namespace LegendaryExplorerCore.Unreal.BinaryConverters
             i = 0;
             staticCollectionActor = null;
             return false;
-
         }
 
         public (Vector3 translation, Vector3 scale, Rotator rotation) GetDecomposedTransformationForIndex(int index) => LocalToWorldTransforms[index].UnrealDecompose();

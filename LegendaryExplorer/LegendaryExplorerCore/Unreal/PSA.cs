@@ -2,8 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Numerics;
 using LegendaryExplorerCore.Unreal.BinaryConverters;
 
@@ -148,10 +146,11 @@ namespace LegendaryExplorerCore.Unreal
                 });
                 frameCount += numFrames;
 
-                if (animSeq.RawAnimationData is null)
-                {
-                    animSeq.DecompressAnimationData();
-                }
+                /* SirCxyrtyx 8/12/24: Always decompress, do not use pre-existing RawAnimationData if from a upk.
+                 * In same cases, the RawAnimationData is wrong for unknown reasons ¯\_(ツ)_/¯
+                 * The compressed data should be regarded as the source of truth
+                 */
+                animSeq.DecompressAnimationData();
 
                 for (int frameIdx = 0; frameIdx < numFrames; frameIdx++)
                 {
@@ -237,7 +236,6 @@ namespace LegendaryExplorerCore.Unreal
                 animSeqs.Add(seq);
             }
 
-
             return animSeqs;
         }
 
@@ -255,7 +253,6 @@ namespace LegendaryExplorerCore.Unreal
             return psa;
         }
     }
-
 }
 
 namespace LegendaryExplorerCore.Unreal.BinaryConverters

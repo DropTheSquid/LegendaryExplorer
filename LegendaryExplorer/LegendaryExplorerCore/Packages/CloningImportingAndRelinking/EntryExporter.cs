@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text;
 using LegendaryExplorerCore.Misc;
 using LegendaryExplorerCore.Unreal;
 using LegendaryExplorerCore.Unreal.ObjectInfo;
@@ -51,7 +50,6 @@ namespace LegendaryExplorerCore.Packages.CloningImportingAndRelinking
             var newEntry = targetPackage.FindEntry(sourceExport.InstancedFullPath);
             if (newEntry == null)
             {
-
                 var relinkResults2 = EntryImporter.ImportAndRelinkEntries(EntryImporter.PortingOption.CloneAllDependencies, sourceExport, targetPackage, lParent, true, new RelinkerOptionsPackage() { ImportExportDependencies = true, Cache = pc, TargetGameDonorDB = targetDb }, out newEntry);
                 issues.AddRange(relinkResults2);
             }
@@ -116,7 +114,6 @@ namespace LegendaryExplorerCore.Packages.CloningImportingAndRelinking
             {
                 PrepareGlobalFileForPorting(source.FileRef, packagename);
             }
-
 
             Stack<IEntry> parentStack = new Stack<IEntry>();
             IEntry entry = source;

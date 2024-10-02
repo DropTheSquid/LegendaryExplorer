@@ -6,7 +6,6 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using LegendaryExplorerCore.Gammtek.IO;
 using LegendaryExplorerCore.Helpers;
-using LegendaryExplorerCore.Misc;
 using LegendaryExplorerCore.Packages;
 using LegendaryExplorerCore.Unreal.Collections;
 
@@ -418,7 +417,6 @@ namespace LegendaryExplorerCore.Unreal.BinaryConverters
                 sc.ms.Writer.WriteNameReference(name, sc.Pcc);
             }
         }
-
 
         public static void Serialize(this SerializingContainer2 sc, ref SharpDX.Color color)
         {

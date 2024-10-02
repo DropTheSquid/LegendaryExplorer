@@ -60,10 +60,10 @@ namespace LegendaryExplorerCore.Packages
             _commonHeaderFields._idxLink = parent_uIndex;
             _commonHeaderFields._idxObjectName = _fileRef.FindNameOrAdd(name.Name);
             _commonHeaderFields._indexValue = name.Number;
-            _generationNetObjectCounts = Array.Empty<int>();
+            _generationNetObjectCounts = [];
             if (HasComponentMap)
             {
-                _componentMap = Array.Empty<byte>();
+                _componentMap = [];
             }
 
             _commonHeaderFields._dataOffset = 0;
@@ -206,8 +206,6 @@ namespace LegendaryExplorerCore.Packages
         
         public bool IsDefaultObject => _commonHeaderFields._objectFlags.Has(EObjectFlags.ClassDefaultObject);
 
-
-
         /// <summary>
         /// Get generates the header, Set deserializes all the header values from the provided byte array
         /// </summary>
@@ -271,8 +269,6 @@ namespace LegendaryExplorerCore.Packages
         public const int OFFSET_DataSize = 32;
         public const int OFFSET_DataOffset = 36;
 
-
-
         /// <summary>
         /// Generates the header byte array
         /// </summary>
@@ -289,7 +285,7 @@ namespace LegendaryExplorerCore.Packages
                 unsafe
                 {
                     byte[] bytes = new byte[sizeof(CommonHeaderFields)];
-                    MemoryMarshal.Write(bytes.AsSpan(), ref _commonHeaderFields);
+                    MemoryMarshal.Write(bytes.AsSpan(), in _commonHeaderFields);
                     return bytes;
                 }
             }
@@ -311,7 +307,7 @@ namespace LegendaryExplorerCore.Packages
                 }
                 else
                 {
-                    byte[] componentMap = _componentMap ?? Array.Empty<byte>();
+                    byte[] componentMap = _componentMap ?? [];
                     bin.WriteInt32(componentMap.Length / 12);
                     bin.Write(componentMap);
                 }
@@ -345,7 +341,7 @@ namespace LegendaryExplorerCore.Packages
                     stream.Seek(-SIZE_OF_PACKAGEGUID_AND_PACKAGEFLAGS, SeekOrigin.Current);
                     goto GenNetObjsNotEmpty;
                 }
-                _generationNetObjectCounts = Array.Empty<int>();
+                _generationNetObjectCounts = [];
                 return;
             }
             //slower fallback :(
@@ -560,6 +556,8 @@ namespace LegendaryExplorerCore.Packages
 
         //me1 and me2 only
         private byte[] _componentMap;
+        
+        //Does not contain UIndexes! The ints in this are indexes into the exports array. +1 to get the UIndex
         public UMultiMap<NameReference, int> ComponentMap
         {
             get
@@ -583,7 +581,7 @@ namespace LegendaryExplorerCore.Packages
                     {
                         return;
                     }
-                    _componentMap = Array.Empty<byte>();
+                    _componentMap = [];
                     HeaderChanged = true;
                     return;
                 }
@@ -685,6 +683,7 @@ namespace LegendaryExplorerCore.Packages
 
         public string ParentInstancedFullPath => _fileRef.GetEntry(_commonHeaderFields._idxLink)?.InstancedFullPath ?? "";
         public string InstancedFullPath => _fileRef.IsEntry(_commonHeaderFields._idxLink) ? ObjectName.AddToPath(ParentInstancedFullPath) : ObjectName.Instanced;
+        public string MemoryFullPath => IsForcedExport ? InstancedFullPath : $"{FileRef.FileNameNoExtension.StripUnrealLocalization()}.{InstancedFullPath}";
 
         public bool HasParent => _fileRef.IsEntry(_commonHeaderFields._idxLink);
 
@@ -1070,7 +1069,7 @@ namespace LegendaryExplorerCore.Packages
         }
 
         /// <summary>
-        /// 
+        /// Writes the existing pre-prop binary (if it exists), then appends props and binary
         /// </summary>
         /// <param name="props"></param>
         /// <param name="binary"></param>
@@ -1085,7 +1084,7 @@ namespace LegendaryExplorerCore.Packages
         }
 
         /// <summary>
-        /// 
+        /// Writes the entire export data
         /// </summary>
         /// <param name="preProps"></param>
         /// <param name="props"></param>
@@ -1109,7 +1108,7 @@ namespace LegendaryExplorerCore.Packages
             var clone = (ExportEntry)MemberwiseClone();
 
             //set to empty array to avoid the sequenceequal optimization when setting Data
-            clone._data = Array.Empty<byte>();
+            clone._data = [];
             clone.Data = _data.ArrayClone();
 
             clone._generationNetObjectCounts = _generationNetObjectCounts.ArrayClone();
@@ -1135,6 +1134,7 @@ namespace LegendaryExplorerCore.Packages
             {
                 if ((ExportFlags & EExportFlags.ForcedExport) != 0) return true;
                 if (Parent is ExportEntry exp) return exp.IsForcedExport;
+                // Need to handle ImportEntry parents, I think? Are all downlevel children marked in vanilla?
                 return false;
             }
         }
