@@ -117,7 +117,7 @@ namespace LegendaryExplorer.Tools.PackageEditor.Experiments
 
             if (folder == null)
             {
-                IEntry packageClass = pew.Pcc.getEntryOrAddImport("Core.Package");
+                IEntry packageClass = pew.Pcc.GetEntryOrAddImport("Core.Package", "Class", "Core");
                 folder = new ExportEntry(pew.Pcc, 0, packageName)
                 {
                     Class = packageClass
@@ -131,7 +131,7 @@ namespace LegendaryExplorer.Tools.PackageEditor.Experiments
 
         private static ExportEntry CreateBioMorphFace(PackageEditorWindow pew, string objectName)
         {
-            IEntry BioMorphFaceClass = pew.Pcc.getEntryOrAddImport("SFXGame.BioMorphFace");
+            IEntry BioMorphFaceClass = pew.Pcc.GetEntryOrAddImport("SFXGame.BioMorphFace", "Class", "Core");
             var morphFace = new ExportEntry(pew.Pcc, 0, objectName)
             {
                 Class = BioMorphFaceClass
@@ -320,6 +320,24 @@ defaultproperties
             return true;
         }
 
+        public static void GetMeshMaterials(PackageEditorWindow pew)
+        {
+            List<string> mats = [];
+            // get the export and binary of the Skeletal Mesh that is currently selected, if any
+            if (GetSelectedMeshBinary(pew, out _, out var meshBinary))
+            {
+
+                foreach (var uIndex in meshBinary.Materials)
+                {
+                    var entry = pew.Pcc.GetEntry(uIndex);
+                    mats.Add($"\"{entry.MemoryFullPath}\"");
+                }
+
+                var result = string.Join(",", mats);
+                Clipboard.SetText(result);
+            }
+        }
+
         public static void MakeHeterochromiaMesh(PackageEditorWindow pew)
         {
             // get the export and binary of the Skeletal Mesh that is currently selected, if any
@@ -367,25 +385,27 @@ defaultproperties
                     return;
                 }
 
-                var textureParams = scalpMIC.GetProperty<ArrayProperty<StructProperty>>("TextureParameterValues");
-                if (textureParams == null)
-                {
-                    ShowError("could not find teeth mask");
-                    return;
-                }
+                var teethMaskTexExport = pew.Pcc.FindExport("BRT.HMM_BRT_MED_Spwr_Stack");
 
-                var teethMaskParam = textureParams.FirstOrDefault(x => x.GetProp<NameProperty>("ParameterName")?.Value.ToString() == "HED_Teeth_Diff");
-                if (teethMaskParam == null)
-                {
-                    ShowError("could not find teeth mask");
-                    return;
-                }
+                //var textureParams = scalpMIC.GetProperty<ArrayProperty<StructProperty>>("TextureParameterValues");
+                //if (textureParams == null)
+                //{
+                //    ShowError("could not find teeth mask");
+                //    return;
+                //}
 
-                if (!pew.Pcc.TryGetUExport(teethMaskParam.GetProp<ObjectProperty>("ParameterValue").Value, out var teethMaskTexExport))
-                {
-                    ShowError("could not find teeth mask");
-                    return;
-                }
+                //var teethMaskParam = textureParams.FirstOrDefault(x => x.GetProp<NameProperty>("ParameterName")?.Value.ToString() == "HED_Teeth_Diff");
+                //if (teethMaskParam == null)
+                //{
+                //    ShowError("could not find teeth mask");
+                //    return;
+                //}
+
+                //if (!pew.Pcc.TryGetUExport(teethMaskParam.GetProp<ObjectProperty>("ParameterValue").Value, out var teethMaskTexExport))
+                //{
+                //    ShowError("could not find teeth mask");
+                //    return;
+                //}
 
                 var teethMaskImg = ToIsImage(new Tex2D(teethMaskTexExport));
 
@@ -398,7 +418,7 @@ defaultproperties
 
                     var centroidPixel = GetPixel(teethMaskImg, uvCentroidX, uvCentroidY);
 
-                    return centroidPixel.G > 0;
+                    return centroidPixel.B > 0;
                 }
 
                 // from there, find the section we need to modify
@@ -410,6 +430,8 @@ defaultproperties
 
         private static Bgra32 GetPixel(SixLabors.ImageSharp.Image<Bgra32> img, float x, float y)
         {
+            x = x % 1;
+            y = y % 1;
             return img[(int)(img.Width * x), (int)(img.Height * y)];
         }
 

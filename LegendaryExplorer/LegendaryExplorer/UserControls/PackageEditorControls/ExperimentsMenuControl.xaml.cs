@@ -1376,6 +1376,11 @@ namespace LegendaryExplorer.UserControls.PackageEditorControls
             PackageEditorExperimentsSquid.MakeHeterochromiaMesh(GetPEWindow());
         }
 
+        private void GetMeshMaterials_Click(object sender, RoutedEventArgs e)
+        {
+            PackageEditorExperimentsSquid.GetMeshMaterials(GetPEWindow());
+        }
+
         private void SplitTeeth_Click(object sender, RoutedEventArgs e)
         {
             PackageEditorExperimentsSquid.SplitTeethFromScalp(GetPEWindow());
