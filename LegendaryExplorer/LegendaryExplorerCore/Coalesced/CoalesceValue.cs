@@ -38,6 +38,8 @@ namespace LegendaryExplorerCore.Coalesced
 
         public string Comment { get; set; }
 
+        public string? DoubleTypePrefix { get; set; }
+
         public static int GetValueType(CoalesceParseAction valueType)
         {
             switch (valueType)
