@@ -1891,6 +1891,336 @@ defaultproperties
             }
         }
 
+        public static void SetupSplitFictionMats(PackageEditorWindow pew)
+        {
+            // inputs: a folder
+            // outputs: an LE1 package with appropriate materials for those meshes, converting the textures extracted from Split Fiction to be suitable for LE1
+            var folderPicker = new CommonOpenFileDialog
+            {
+                IsFolderPicker = true,
+                EnsurePathExists = true,
+                Title = "Select folder with to create materials from"
+            };
+            if (folderPicker.ShowDialog(pew) is not CommonFileDialogResult.Ok)
+            {
+                return;
+            }
+            string folderName = folderPicker.FileName;
+
+            List<string> dirs = [folderName, .. (Directory.EnumerateDirectories(folderName, "*", new EnumerationOptions() { RecurseSubdirectories = true, }).ToList())];
+
+            foreach (var dir in dirs)
+            {
+                foreach (var M1 in Directory.EnumerateFiles(dir, "*_S1.png"))
+                {
+                    var groupName = Path.GetFileNameWithoutExtension(M1).Replace("_S1", "");
+
+                    // M1 is diff on the color channels, part of spec on the alpha
+                    // M2 is norm on the R and G channels, unknown on blue channel, and metal mask on the alpha
+                    // M3 is unknown but almost never used for characters, so I don't need to worry about it.
+                    // M4 is emis. Just the color. 
+                    // M5 is an opacity mask. white is opaque, black is transparent. unsure about anything in between. with a material that supports it, we can use the texture unmodified
+                    // M6 is almost never used for outfits. ignoring. 
+                    // M7 is used very rarely and I'm not going to worry about it
+                    // there are also S and H textures for skin and hair. I'm not worrying about those for now.
+                    // look for textures ending in M1, M2, or M4. I know roughly how to deal with those.
+
+                    //var M1 = Directory.EnumerateFiles(dir, $"{groupName}_M1.tga").SingleOrDefault();
+                    var M2 = Directory.EnumerateFiles(dir, $"{groupName}_S2.png").SingleOrDefault();
+                    var M4 = Directory.EnumerateFiles(dir, $"{groupName}_M4.png").SingleOrDefault();
+                    var M5 = Directory.EnumerateFiles(dir, $"{groupName}_M5.png").SingleOrDefault();
+
+                    if (M1 == null || M2 == null)
+                    {
+                        Console.WriteLine($"M1 or M2 is missing from folder {dir}; skipping");
+                        continue;
+                    }
+
+                    bool hasTransparency = false;
+                    if (M5 != null)
+                    {
+                        hasTransparency = true;
+                    }
+
+                    var m1Image = Image.Load<Rgba32>(M1);
+                    var m2Image = Image.Load<Rgba32>(M2);
+                    var m4Image = M4 != null ? Image.Load<Rgba32>(M4) : new Image<Rgba32>(m1Image.Width, m1Image.Height);
+                    var m5Image = M5 != null ? Image.Load<Rgba32>(M5) : new Image<Rgba32>(m1Image.Width, m1Image.Height);
+
+                    if (m1Image.Size != m2Image.Size || m1Image.Size != m4Image.Size || m1Image.Size != m5Image.Size)
+                    {
+                        throw new NotImplementedException("cannot yet deal with input textures of different sizes");
+                    }
+
+                    var diff = new Image<Rgba32>(m1Image.Width, m1Image.Height);
+                    var norm = new Image<Rgba32>(m1Image.Width, m1Image.Height);
+                    var spec = new Image<Rgba32>(m1Image.Width, m1Image.Height);
+
+                    var transparencySpec = new Image<Rgba32>(m1Image.Width, m1Image.Height);
+                    var transparencySpecPower = new Image<Rgba32>(m1Image.Width, m1Image.Height);
+
+                    // more efficient ways to do this at some point
+                    //m1Image.Mutate(c => c.ProcessPixelRowsAsVector4(row =>
+                    //{
+                    //    for (int x = 0; x < row.Length; x++)
+                    //    {
+                    //        // We can apply any custom processing logic here
+                    //        row[x] = Vector4.SquareRoot(row[x]);
+                    //    }
+                    //}));
+
+                    // get efficient accessors for the images
+                    //m1Image.ProcessPixelRows(m2Image, diff, (m1Accessor, m2Accessor, diffAccessor) =>
+                    //{
+                    //    norm.ProcessPixelRows(spec, m4Image, (normAccessor, specAccessor, m4Accessor) =>
+                    //    {
+                    //        // get a single row of each of them
+                    //        for (int y = 0; y < m1Accessor.Height; y++)
+                    //        {
+                    //            Span<Rgba32> pixelRow = accessor.GetRowSpan(y);
+                    //        }
+
+                    //    });
+                    //});
+
+                    int emisPixels = 0;
+                    int emisR = 0;
+                    int emisG = 0;
+                    int emisB = 0;
+                    for (int i = 0; i < diff.Width; i++)
+                    {
+                        for (int j = 0; j < diff.Height; j++)
+                        {
+                            var m1Pixel = m1Image[i, j];
+                            var m2Pixel = m2Image[i, j];
+                            var m4Pixel = m4Image[i, j];
+
+                            // diff:
+                            // take rgb of M1, multiply by  m2 blue after applying a curve to increase it a bit
+                            var multPix = ApplyColorCurveUp(m2Pixel.B);
+                            byte emis = ToGrayscale(m4Pixel);
+                            if (emis > 0)
+                            {
+                                emisPixels++;
+                                emisR += m4Pixel.R;
+                                emisG += m4Pixel.G;
+                                emisB += m4Pixel.B;
+                            }
+                            diff[i, j] = new Rgba32(ColorMultiply(m1Pixel.R, multPix), ColorMultiply(m1Pixel.G, multPix), ColorMultiply(m1Pixel.B, multPix), emis);
+
+                            // norm:
+                            // already correct how I had it
+                            // drop the alpha and blue channel of m2, but use R and G for the norm, calculating the blue pixel
+                            var x = m2Pixel.R / 127.5f - 1;
+                            var y = m2Pixel.G / 127.5f - 1;
+                            var z = Math.Sqrt(1 - (x * x + y * y));
+
+                            norm[i, j] = new Rgba32(m2Pixel.R, m2Pixel.G, (byte)((z + 1) * 127.5), 255);
+
+                            // spec green (roughness):
+                            // multiply together the alpha from M1 with inverted alpha from M2 to get green channel
+                            var specPower = ColorMultiply(m1Pixel.A, ColorInvert(m2Pixel.B));
+                            specPower = ColorInvert(specPower);
+                            specPower = ApplyColorCurveDown(specPower);
+                            specPower = ApplyColorCurveDown(specPower);
+                            specPower = ApplyColorCurveUp(specPower);
+                            specPower = ApplyColorCurveUp(specPower);
+                            // R is spec base
+                            // G is roughness/spec power
+                            // blue is tmis (for skin stuff)
+                            // alpha is skin mask (will ignore since I am not doing skin here
+                            spec[i, j] = new Rgba32(m1Pixel.A, specPower, 0, 255);
+
+                            if (hasTransparency)
+                            {
+                                transparencySpec[i, j] = new Rgba32(m1Pixel.A, m1Pixel.A, m1Pixel.A, 255);
+                                transparencySpecPower[i, j] = new Rgba32(specPower, specPower, specPower, 255);
+                            }
+                        }
+                    }
+
+                    // BC7 is great when there are no alphas, or for gradient alphas, but not suitable for emis
+                    // DXT 3 is for sharp alphas
+                    // can also do uncompressed. worse for memory usage
+                    // I'm gonna do that for my testing, and it's mostly for AMM, so what's the worst that could happen
+
+                    // TODO make sure a file is open
+                    var parent = ExportCreator.CreatePackageExport(pew.Pcc, pew.Pcc.GetNextIndexedName(groupName), forcedExport: false);
+                    // TODO pick format based on whether it has an alpha or not?
+                    var diffExport = Texture2D.CreateTexture(pew.Pcc, $"{groupName}_Diff", diff.Width, diff.Height, M4 == null ? LegendaryExplorerCore.Textures.PixelFormat.BC7 : LegendaryExplorerCore.Textures.PixelFormat.DXT3, true, parent);
+                    var normExport = Texture2D.CreateTexture(pew.Pcc, $"{groupName}_Norm", norm.Width, norm.Height, LegendaryExplorerCore.Textures.PixelFormat.BC7, true, parent);
+                    var specExport = Texture2D.CreateTexture(pew.Pcc, $"{groupName}_Spec", spec.Width, spec.Height, LegendaryExplorerCore.Textures.PixelFormat.BC7, true, parent);
+
+                    normExport.WriteProperty(new BoolProperty(false, "SRGB"));
+
+                    ReplaceTexture(diffExport, diff);
+                    ReplaceTexture(normExport, norm);
+                    ReplaceTexture(specExport, spec);
+
+                    // next, I need to make a material to hook it up to
+                    var cthMic = ExportCreator.CreateExport(pew.Pcc, $"{groupName}_Mat_CTH", "MaterialInstanceConstant", parent, indexed: false);
+                    var textures = new ArrayProperty<StructProperty>("TextureParameterValues")
+                    {
+                        new ("textureParameterValue", false, new NameProperty("HMM_ARM_ALL_Diff_Stack", "ParameterName"), new ObjectProperty(diffExport, "ParameterValue")),
+                        new ("textureParameterValue", false, new NameProperty("HMM_ARM_ALL_Norm_Stack", "ParameterName"), new ObjectProperty(normExport, "ParameterValue")),
+                        new ("textureParameterValue", false, new NameProperty("HMM_ARM_ALL_SPwr_Stack", "ParameterName"), new ObjectProperty(specExport, "ParameterValue"))
+                    };
+                    cthMic.WriteProperty(textures);
+                    var matParent = pew.Pcc.FindEntry("EffectsMaterials.Users.HMM_CTH_MASTER_MAT_USER", "RvrEffectsMaterialUser");
+                    if (matParent != null)
+                    {
+                        cthMic.WriteProperty(new ObjectProperty(matParent, "Parent"));
+                    }
+
+                    var armMic = ExportCreator.CreateExport(pew.Pcc, $"{groupName}_Mat_ARM", "MaterialInstanceConstant", parent, indexed: false);
+                    var armTextures = new ArrayProperty<StructProperty>("TextureParameterValues")
+                    {
+                        new ("textureParameterValue", false, new NameProperty("SAL_ARM_ALL_Diff_Stack", "ParameterName"), new ObjectProperty(diffExport, "ParameterValue")),
+                        new ("textureParameterValue", false, new NameProperty("SAL_ARM_ALL_Norm_Stack", "ParameterName"), new ObjectProperty(normExport, "ParameterValue")),
+                        new ("textureParameterValue", false, new NameProperty("SAL_ARM_ALL_Spwr_Stack", "ParameterName"), new ObjectProperty(specExport, "ParameterValue"))
+                    };
+                    armMic.WriteProperty(armTextures);
+                    if (emisPixels > 0)
+                    {
+                        // calculate the average color of the emis and use that as the emis color
+                        var emisFactor = 5;
+                        var armVectors = new ArrayProperty<StructProperty>("VectorParameterValues")
+                        {
+                            new ("VectorParameterValue", false, new NameProperty("SAL_ARM_ALL_Emis_Colour", "ParameterName"),
+                            new StructProperty("LinearColor", true, new FloatProperty(emisR / emisPixels / 255f * emisFactor, "R"), new FloatProperty(emisG / emisPixels / 255f * emisFactor, "G"), new FloatProperty(emisB / emisPixels / 255f * emisFactor, "B"), new FloatProperty(1, "A")) {Name = "ParameterValue"}),
+                        };
+                        armMic.WriteProperty(armVectors);
+                    }
+                    var armParent = pew.Pcc.FindEntry("EffectsMaterials.Users.SAL_ARM_MASTER_MAT_USER", "RvrEffectsMaterialUser");
+                    if (armParent != null)
+                    {
+                        armMic.WriteProperty(new ObjectProperty(armParent, "Parent"));
+                    }
+
+                    if (hasTransparency)
+                    {
+                        var transparencySpecExport = Texture2D.CreateTexture(pew.Pcc, $"{groupName}_APL_Spec", diff.Width, diff.Height, LegendaryExplorerCore.Textures.PixelFormat.BC7, true, parent);
+                        var transparencySpecPowerExport = Texture2D.CreateTexture(pew.Pcc, $"{groupName}_APL_Spec_Power", diff.Width, diff.Height, LegendaryExplorerCore.Textures.PixelFormat.BC7, true, parent);
+                        var transparencyMaskExport = Texture2D.CreateTexture(pew.Pcc, $"{groupName}_Opacity_Mask", diff.Width, diff.Height, LegendaryExplorerCore.Textures.PixelFormat.BC7, true, parent);
+                        // TODO write out M4 as the APL_emis texture?
+                        ReplaceTexture(transparencySpecExport, transparencySpec);
+                        ReplaceTexture(transparencySpecPowerExport, transparencySpecPower);
+                        ReplaceTexture(transparencyMaskExport, m5Image);
+
+                        var aplMic = ExportCreator.CreateExport(pew.Pcc, $"{groupName}_Mat_APL", "MaterialInstanceConstant", parent, indexed: false);
+                        var aplTextures = new ArrayProperty<StructProperty>("TextureParameterValues")
+                        {
+                            new ("textureParameterValue", false, new NameProperty("Diffuse", "ParameterName"), new ObjectProperty(diffExport, "ParameterValue")),
+                            new ("textureParameterValue", false, new NameProperty("Normal", "ParameterName"), new ObjectProperty(normExport, "ParameterValue")),
+                            new ("textureParameterValue", false, new NameProperty("Specular", "ParameterName"), new ObjectProperty(transparencySpecExport, "ParameterValue")),
+                            new ("textureParameterValue", false, new NameProperty("SpecularPower", "ParameterName"), new ObjectProperty(transparencySpecPowerExport, "ParameterValue")),
+                            new ("textureParameterValue", false, new NameProperty("OpacityMask", "ParameterName"), new ObjectProperty(transparencyMaskExport, "ParameterValue"))
+                        };
+                        aplMic.WriteProperty(aplTextures);
+                        // TODO add spec related scalars to make metal shinier?
+                        var aplParent = pew.Pcc.FindEntry("BIOG_APL_MASTER_MATERIAL.APL__MASTER__Mat", "Material");
+                        if (aplParent != null)
+                        {
+                            aplMic.WriteProperty(new ObjectProperty(aplParent, "Parent"));
+                        }
+                    }
+
+                    // TODO bring in material parent if needed
+                    // TODO pick whether it is CTH mat or salarian armor material. generate both? let's do that for testing purposes. 
+                }
+            }
+        }
+
+        private static byte ApplyColorCurveUp(byte input)
+        {
+            // need to map to a nice curve where the output will be a bit brigher than the input
+            // but specifically, it needs to be equal at 0 and 255, and with the most change at about the middle
+            // points: at 25%, it should map to 65%
+            // at 50%, it should map to 86%
+            // at 75% it should map to 96%
+            if (input < 64)
+            {
+                return (byte)(input * 65 / 25);
+            }
+            else if (input < 128)
+            {
+                return (byte)(((input - 64) * (86 - 65) / 25) + 165);
+            }
+            else if (input < 192)
+            {
+                return (byte)(((input - 128) * (96 - 86) / 25) + 219);
+            }
+            else
+            {
+                return (byte)(((input - 192) * (100 - 96) / 25) + 245);
+            }
+        }
+
+        private static byte ApplyColorCurveDown(byte input)
+        {
+            // same as above, but 0, 4, 14, 35, 100
+            if (input < 64)
+            {
+                return (byte)(input * 4 / 25);
+            }
+            else if (input < 128)
+            {
+                return (byte)(((input - 64) * (14 - 4) / 25) + 10);
+            }
+            else if (input < 192)
+            {
+                return (byte)(((input - 128) * (35 - 14) / 25) + 25);
+            }
+            else
+            {
+                return (byte)(((input - 192) * (100 - 35) / 25) + 89);
+            }
+        }
+
+        private static byte ColorMultiply(byte first, byte second)
+        {
+            return (byte)(first * second / 255);
+        }
+
+        private static byte ColorInvert(byte input)
+        {
+            return (byte)(255 - input);
+        }
+
+        private static byte ToGrayscale(Rgba32 input)
+        {
+            return (byte)((input.R + input.G + input.B) / 3);
+        }
+
+        public static void AddTexturesToTfc(PackageEditorWindow pew)
+        {
+            if (pew.Pcc == null)
+            {
+                return;
+            }
+
+            foreach (var export in pew.Pcc.Exports)
+            {
+                if (export.ClassName == "Texture2D")
+                {
+                    var tex = new Texture2D(export);
+                    Image<Rgba32> image = ToIsImage(tex);
+
+                    //for (var i = 0; i < normalMapImage.Width; i++)
+                    //{
+                    //    for (var j = 0; j < normalMapImage.Height; j++)
+                    //    {
+                    //        var pix = normalMapImage[i, j];
+
+                    //        normalMapImage[i, j] = new Rgba32(pix.R, pix.G, pix.B, (byte)0);
+                    //    }
+                    //}
+
+                    ReplaceTexture(export, image, "Textures_DLC_MOD_SplitFictionOutfits");
+                }
+            }
+        }
+
         // seems promising, but needs more work
         public static void SmoothMeshSeams(PackageEditorWindow pew)
         {
@@ -1937,8 +2267,6 @@ defaultproperties
                     {
                         // copy the position and tanZ from the source to the target to make the seam match up better.
                         targetBin.LODModels[0].VertexBufferGPUSkin.VertexData[targetIndex].Position = sourceVert.Position;
-                        // save the bitangent sign (which is stored in TangentZ W component) and use it in the new tangent
-                        var originalBitangentSign = targetBin.LODModels[0].VertexBufferGPUSkin.VertexData[targetIndex].TangentZ.W;
 
                         // now, calculate the "actual" tangent at the source point taking into account the normal map at that point
                         Vector3 vectorToMatch;
@@ -2052,7 +2380,7 @@ defaultproperties
             var I = v.Y * t.X / v.Z;
             var J = (H * B + I) / (1 - (F * B));
             var K = (E + (F * C)) / (1 - (H * C));
-            
+
             var Y = (D + (F * A) + (K * G) + (K * H * A)) / (1 - (F * B) - (K * H * B) - (K * I));
             var Z = (G + (H * A) + (J * D) + (J * F * A)) / (1 - (H * C) - (J * E) - (J * F * C));
             var X = A + (B * Y) + C * Z;

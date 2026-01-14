@@ -201,6 +201,8 @@
             <MenuItem Header="make texture opaque" Click="RemoveTranparency_Click" ToolTip="."/>
             <MenuItem Header="Smooth Mesh Seams" Click="SmoothMeshSeams_Click" ToolTip="Attempts to reduce seams between meshes."/>
             <MenuItem Header="Fix misaligned skeleton" Click="FixMisalignedSkeleton_Click" ToolTip="Attempts to fix a misaligned skeleton. This issue will pop up when the vertices on the neck seam match at rest, but there is a gap when animations are applied."/>
+            <MenuItem Header="Add textures to tfc" Click="AddTexturesToTfc_Click" ToolTip="Add all package stored textures to tfc."/>
+            <MenuItem Header="Split Fiction mats" Click="SetupSplitFictionMats_Click" ToolTip="Lets you mess with channels of a texture."/>
         </MenuItem>
     </MenuItem>
     <MenuItem Header="Other people's box of Legos">

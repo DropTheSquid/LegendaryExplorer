@@ -1422,6 +1422,15 @@ namespace LegendaryExplorer.UserControls.PackageEditorControls
             PackageEditorExperimentsSquid.FixMisallignedSkeleton(GetPEWindow());
         }
 
+        private void SetupSplitFictionMats_Click(object sender, RoutedEventArgs e)
+        {
+            PackageEditorExperimentsSquid.SetupSplitFictionMats(GetPEWindow());
+        }
+
+        private void AddTexturesToTfc_Click(object sender, RoutedEventArgs e)
+        {
+            PackageEditorExperimentsSquid.AddTexturesToTfc(GetPEWindow());
+        }
         #endregion
 
         // EXPERIMENTS: OTHER PEOPLE ------------------------------------------------------------
